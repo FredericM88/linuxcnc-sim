@@ -1,0 +1,38 @@
+# Dedicated virtual-machine example. Uses the ORIGINAL installed HAL driver.
+# No physical machine drivers, GPIO or EtherCAT are loaded.
+loadrt [KINS]KINEMATICS
+loadrt [EMCMOT]EMCMOT servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
+loadrt stepgen-ninja ip_address="192.168.50.2:8888"
+
+addf motion-command-handler servo-thread
+addf motion-controller servo-thread
+addf stepgen-ninja.0.watchdog-process servo-thread
+addf stepgen-ninja.0.process-send servo-thread
+addf stepgen-ninja.0.process-recv servo-thread
+
+setp stepgen-ninja.0.stepgen.pulse-width 2500
+setp stepgen-ninja.0.stepgen.0.step-scale [JOINT_0]INPUT_SCALE
+setp stepgen-ninja.0.stepgen.1.step-scale [JOINT_1]INPUT_SCALE
+setp stepgen-ninja.0.stepgen.2.step-scale [JOINT_2]INPUT_SCALE
+setp stepgen-ninja.0.stepgen.3.step-scale 400
+setp stepgen-ninja.0.stepgen.0.mode 0
+setp stepgen-ninja.0.stepgen.1.mode 0
+setp stepgen-ninja.0.stepgen.2.mode 0
+setp stepgen-ninja.0.stepgen.3.mode 0
+setp stepgen-ninja.0.stepgen.3.enable 0
+
+net x-cmd joint.0.motor-pos-cmd => stepgen-ninja.0.stepgen.0.command
+net y-cmd joint.1.motor-pos-cmd => stepgen-ninja.0.stepgen.1.command
+net z-cmd joint.2.motor-pos-cmd => stepgen-ninja.0.stepgen.2.command
+# The original driver's feedback is its local command copy, not a network position.
+net x-fb stepgen-ninja.0.stepgen.0.feedback => joint.0.motor-pos-fb
+net y-fb stepgen-ninja.0.stepgen.1.feedback => joint.1.motor-pos-fb
+net z-fb stepgen-ninja.0.stepgen.2.feedback => joint.2.motor-pos-fb
+net x-enable joint.0.amp-enable-out => stepgen-ninja.0.stepgen.0.enable
+net y-enable joint.1.amp-enable-out => stepgen-ninja.0.stepgen.1.enable
+net z-enable joint.2.amp-enable-out => stepgen-ninja.0.stepgen.2.enable
+
+net sim-enable iocontrol.0.user-enable-out => stepgen-ninja.0.io-ready-in
+net sim-ready stepgen-ninja.0.io-ready-out => iocontrol.0.emc-enable-in
+net tool-prepare iocontrol.0.tool-prepare => iocontrol.0.tool-prepared
+net tool-change iocontrol.0.tool-change => iocontrol.0.tool-changed

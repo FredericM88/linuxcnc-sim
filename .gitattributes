@@ -1,0 +1,4 @@
+# Preserve upstream bytes, including existing whitespace and line endings.
+# Own project sources retain normal Git whitespace checks.
+/stepper-ninja/** -text -whitespace
+/third_party/stepper-ninja/** -text -whitespace

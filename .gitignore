@@ -1,0 +1,56 @@
+# Build directories and generated CMake/compiler output (keep source Makefiles).
+/build*/
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+
+# Local recorder exports and generated test output.
+*.csv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# LinuxCNC runtime state; keep the .ini, .hal, .tbl and .conf examples.
+/examples/phase1/*.var*
+/examples/phase1/*.log
+/examples/phase1/position.txt
+/examples/phase3/*.var*
+/examples/phase3/*.log
+/examples/phase3/position.txt
+
+# Temporary files, editor/IDE and OS metadata.
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+/.cache/
+/tmp/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Original checkout metadata stays local; original source files are committed.
+/stepper-ninja/.git/
+# Unneeded upstream prebuilt binaries and hardware dependency archive.
+/stepper-ninja/utility/benchmark_udp
+/stepper-ninja/utility/counter/step-dir-counter.uf2
+/stepper-ninja/firmware/ioLibrary_Driver.zip
+/stepper-ninja/firmware/ioLibrary_Driver/
