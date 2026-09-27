@@ -16,10 +16,18 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 | Phase 1: virtuelle Stepper-Ninja-UDP-Hardware und Motion-Anbindung | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 2: Terminaloberfläche und Motion Recorder | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
-| Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | implementiert und automatisiert getestet; interaktive LinuxCNC-Grafikabnahme ausstehend |
-| Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | Runtime-Konsole, transaktionale Snapshots und Rebuild implementiert |
+| Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | automatisiert getestet; OpenGL-/G53-Pfad im Rahmen der realen 4A.1-Abnahme bestätigt |
+| Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | automatisiert getestet und am 2026-09-27 real/interaktiv mit LinuxCNC 2.9.10 erfolgreich abgenommen |
 
-Die reale Abnahme wurde vom Benutzer bestätigt. In Phase 3 liefen Simulator und
+Die reale Phase-4A.1-Abnahme wurde vom Benutzer bestätigt: Runtime-Geometrie,
+Origins, Platzierung und G53-Werkzeugposition stimmten mit LinuxCNC 2.9.10
+überein. Bei aktiver Phase-3-VirtualIO wurden **RX = accepted = TX = 841238**
+und ausschließlich null Fehlerzähler beobachtet. Das ist ein funktionaler
+Sitzungsnachweis, keine harte Echtzeit- oder formale Zuverlässigkeitsgarantie.
+Das [reale Abnahmeprotokoll](docs/phase4a1-test.md) enthält Startbefehle,
+Bounds und den G53-End-to-End-Test.
+
+Auch die frühere reale Phase-3-Abnahme wurde vom Benutzer bestätigt. Dabei liefen Simulator und
 LinuxCNC stabil mit **RX = accepted = TX**; Invalid-Pakete, Send Errors, Length
 Errors, Checksum Errors, Timing Errors, Position Overflows und Packet-ID Gaps
 blieben bei **0**. `input 22 on` kam am Original-HAL als GP22=TRUE und
@@ -84,8 +92,8 @@ nicht erforderlich: `-DBUILD_TESTING=OFF`.
 ```
 
 Das Beispiel öffnet die lokale Ansicht ohne LinuxCNC-Verbindung. Für LinuxCNC
-im vorhandenen Netzwerk-Namespace siehe den [vollständigen Grafik-Start und
-10/10/2-mm-Abnahmetest](docs/phase4a-test.md#konkrete-manuelle-linuxcnc-abnahme).
+im vorhandenen Netzwerk-Namespace siehe den [real abgenommenen Grafik-Start
+mit Phase-3-VirtualIO und G53-Test](docs/phase4a1-test.md).
 Die bisherige Nutzung ohne `--render` bleibt erhalten.
 
 Dargestellt werden ein 50×50×10-mm-Rohteil (Oberseite Z=0), ein 6-mm-Flachfräser,
@@ -151,7 +159,8 @@ env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-fa
 Geprüft: **26/26 Tests mit Grafiktests**, **24/24 im Headless-Release-Build**,
 keine Fehler/Skips; auch OpenGL 3.3 Core auf Mesa/radeonsi erfolgreich geprüft.
 Details: [Architektur und Entscheidungen](docs/phase4a-design.md),
-[Testergebnisse und manuelle Abnahme](docs/phase4a-test.md).
+[automatisierte Testergebnisse](docs/phase4a-test.md),
+[reale Phase-4A.1-Abnahme](docs/phase4a1-test.md).
 
 ## Start für LinuxCNC
 

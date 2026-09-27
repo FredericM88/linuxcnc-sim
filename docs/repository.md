@@ -96,3 +96,8 @@ CPU-Mesher erneut. `tests/workpiece_tests.cpp` und `workpiece_cli.py` ergänzen
 Geometrie-, Transaktions-, Snapshot-, Parser- und Terminaltests; die bestehenden
 Grafiktests prüfen auch Rebuilds und UDP/Recorder während des Remeshings.
 Semantik und Kompatibilitätsentscheidungen: [phase4a1-design.md](phase4a1-design.md).
+
+Die reale/interaktive Phase-4A.1-Abnahme vom 2026-09-27 mit LinuxCNC 2.9.10
+ist in [phase4a1-test.md](phase4a1-test.md) dokumentiert.
+[phase4a-test.md](phase4a-test.md) enthält weiterhin die automatisierten
+Build-/Regressionsergebnisse und ergänzende manuelle Prüfanleitungen.

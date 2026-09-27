@@ -5,6 +5,10 @@ Diese Erweiterung ersetzt die statische Szenenverwaltung aus Phase 4A.
 Kein Materialabtrag, Tool Sweep, Kollisionsmodell, G54/G55-Abgleich oder neue
 Probe-Semantik. Die Phase-3-Probe bleibt eine unabhängige Ebene in Steps.
 
+Die reale/interaktive Abnahme mit LinuxCNC 2.9.10 am 2026-09-27 war
+erfolgreich. Beobachtete Konfigurationen, G53-Positionen und UDP-Zähler sind
+in [phase4a1-test.md](phase4a1-test.md) dokumentiert.
+
 ## Koordinaten und Konsole
 
 | Parameter | Bedeutung |

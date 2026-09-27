@@ -99,8 +99,10 @@ Mausrad zoomen, Home Szene einpassen. Auch Resize und Minimieren prüfen.
 
 ## Konkrete manuelle LinuxCNC-Abnahme
 
-**Die interaktive LinuxCNC-Abnahme mit Grafik steht noch aus.** Automatisiert geprüft sind GL
-und die originale UDP-Anbindung einschließlich Live-Pose und Recorder.
+Die interaktive Grafik-/G53-Abnahme wurde am 2026-09-27 im Rahmen von
+[Phase 4A.1 mit LinuxCNC 2.9.10 und Phase-3-VirtualIO](phase4a1-test.md)
+erfolgreich durchgeführt. Die folgende Phase-1-Anleitung bleibt als ergänzender
+10/10/2-mm-Prüfablauf erhalten; sie ist kein Protokoll dieser realen Sitzung.
 Die bestätigten früheren Phase-1–3-Abnahmen bleiben unverändert gültig.
 
 Für den exakten Positionsvergleich die Phase-1-Konfiguration mit sofortiger
@@ -249,7 +251,9 @@ Im laufenden Simulator nacheinander `workpiece size 100 60 20`,
 Bounds mit der Formel vergleichen und Home/Fit prüfen. Während LinuxCNC-Motion
 weitere Änderungen senden; Werkzeugkoordinaten, Recorder, VirtualIO und Probe
 müssen unverändert ihrer bisherigen Quelle folgen. Ungültiges `workpiece size 1 1 1` bei zu großem numerischem Origin muss die letzte gültige Szene erhalten.
-Eine interaktive LinuxCNC-Abnahme wurde für 4A.1 noch nicht durchgeführt;
-automatisierte GL-, Wire- und Namespace-Tests ersetzen diese Bedienungsprüfung
-nicht. Kein Materialabtrag ist implementiert. Große Rebuilds pausieren die
+Die reale/interaktive Phase-4A.1-Abnahme ist am 2026-09-27 erfolgreich erfolgt;
+Startumgebung, tatsächlich berichtete Prüfschritte und Ergebnisse stehen im
+[separaten Abnahmeprotokoll](phase4a1-test.md). Der obige Ablauf enthält auch
+ergänzende Wiederholungsprüfungen, die nicht alle Teil dieser Sitzung waren.
+Kein Materialabtrag ist implementiert. Große Rebuilds pausieren die
 Grafikausgabe, nicht UDP; die bestehenden Raster-/Float-Grenzen gelten weiter.
