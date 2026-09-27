@@ -1,4 +1,4 @@
-# Repositorybestand bis Phase 3
+# Repositorybestand bis Phase 4A
 
 ## Struktur und reproduzierbarer Build
 
@@ -8,12 +8,14 @@ CMakeLists.txt                  Simulator und automatisierte Tests
 README.md                       Einstieg, Bedienung und aktueller Abnahmestatus
 CODEX_PHASE2_*.md                ursprünglicher Phase-2-Auftrag
 CODEX_PHASE3_*.md                ursprünglicher Phase-3-Auftrag
+codex_phase4a_linuxcnc_sim.md    verbindlicher Phase-4A-Auftrag
 docs/                           Protokollanalyse, Herkunft und Phasenabnahmen
 examples/phase1/                 LinuxCNC-Beispiel für Motion
 examples/phase3/                 LinuxCNC-Beispiel mit VirtualIO, Homing und Probe
 scripts/                        veth-/Namespace-Einrichtung, Start und Teardown
 src/                            C++20-Simulator: Protokoll, UDP, Maschine,
-                                Simulation, Recorder, Konsole und virtuelle I/O
+                                Simulation, Recorder, Konsole, virtuelle I/O,
+                                Sparse-Volumen, CPU-Meshing, Werkzeug und Renderer
 tests/                          C/C++-, Python- und Shell-Tests
 third_party/stepper-ninja/       neun unveränderte Dateien für den Protokollkern,
                                 SHA256SUMS und UPSTREAM.md
@@ -24,7 +26,7 @@ Die ursprünglichen CODEX-Auftragsdokumente bleiben als historische Spezifikatio
 erhalten. Den aktuellen Status liefern README und die Phasenabnahmen.
 
 Der Produktionsbuild verwendet `src/` und `third_party/stepper-ninja/`.
-Für die vollständige Suite mit 16 Tests ist außerdem
+Für die vollständige Suite mit 20 Headless-Tests und optional zwei Grafiktests ist außerdem
 `stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c` erforderlich:
 `original-hal-inputs` kompiliert und prüft den Original-HAL-Code direkt.
 Die Anleitung zum separat gebauten LinuxCNC-HAL-Modul benötigt ebenfalls den
@@ -49,7 +51,7 @@ Drei upstream bereits enthaltene Dateien werden bewusst nicht aufgenommen:
 Auch der nicht ausgecheckte Upstream-Gitlink `firmware/ioLibrary_Driver`
 (WIZnet-Submodul) wird nicht übernommen; im Projekt gibt es keine Gitlinks.
 
-Keine dieser Dateien wird vom Simulator, seinen 16 Tests oder dem dokumentierten
+Keine dieser Dateien wird vom Simulator, seinen Tests oder dem dokumentierten
 UDP-HAL-Build benötigt. Sie bleiben im lokalen Originalcheckout erhalten.
 Dieser Projektbestand ist damit kein vollständiges Archiv zum Bauen beliebiger
 Pico-Firmware. Alle übrigen vom Originalcheckout versionierten Dateien bleiben

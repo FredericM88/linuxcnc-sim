@@ -7,6 +7,8 @@
 #include "protocol/StepperNinjaProtocol.hpp"
 #include "recorder/MotionRecorder.hpp"
 #include "io/VirtualSensors.hpp"
+#include "volume/SparseVoxelVolume.hpp"
+#include "tool/Tool.hpp"
 
 namespace cnc {
 enum class Action { Begin, Stop, Clear, Save, Status, IO };
@@ -27,12 +29,15 @@ struct CommandResult {
 class Simulation {
 public:
     Simulation(const std::string& address, std::uint16_t port, Scales scales,
-               const std::vector<IOCommand>& initial_io = {});
+               const std::vector<IOCommand>& initial_io = {},
+               std::optional<SceneConfig> scene = std::nullopt);
     ~Simulation();
     Simulation(const Simulation&) = delete;
     Simulation& operator=(const Simulation&) = delete;
     std::uint16_t port() const { return server_.port(); }
     SimulationStatus status() const;
+    MachineSnapshot machine_snapshot() const;
+    const SparseVoxelVolume* volume() const { return volume_.get(); }
     // Only one UI caller; completion is at a packet boundary, never mid-packet.
     CommandResult command(Action action, IOCommand io = {});
     void stop();
@@ -43,6 +48,8 @@ private:
     UdpServer server_;
     MotionRecorder recorder_;
     VirtualSensors sensors_;
+    std::unique_ptr<const SparseVoxelVolume> volume_; // Immutable Phase-4A scene.
+    Scales scales_;
     mutable std::mutex mailbox_;
     SimulationStatus published_;
     std::unique_ptr<Pending> pending_;

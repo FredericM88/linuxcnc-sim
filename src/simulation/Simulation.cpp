@@ -5,8 +5,9 @@
 
 namespace cnc {
 Simulation::Simulation(const std::string& address, std::uint16_t port, Scales scales,
-                       const std::vector<IOCommand>& initial_io)
-    : device_(scales), server_(address, port) {
+                       const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene)
+    : device_(scales), server_(address, port),
+      volume_(scene ? std::make_unique<const SparseVoxelVolume>(*scene) : nullptr), scales_(scales) {
     for (const auto& command : initial_io) sensors_.execute(command, device_.machine().positions());
     published_.io = sensors_.status();
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
@@ -19,6 +20,10 @@ void Simulation::stop() {
 SimulationStatus Simulation::status() const {
     std::lock_guard lock(mailbox_);
     return published_;
+}
+MachineSnapshot Simulation::machine_snapshot() const {
+    std::lock_guard lock(mailbox_);
+    return {published_.positions, scales_, published_.packets.accepted_packets};
 }
 CommandResult Simulation::command(Action action, IOCommand io) {
     auto request = std::make_unique<Pending>();

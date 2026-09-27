@@ -28,18 +28,50 @@ add_library(cnc_sim_core STATIC
     src/console/IOCommands.cpp
     src/io/VirtualIO.cpp
     src/io/Sensors.cpp
-    src/io/VirtualSensors.cpp)
+    src/io/VirtualSensors.cpp
+    src/volume/SparseVoxelVolume.cpp
+    src/meshing/SurfaceMesher.cpp
+    src/tool/Tool.cpp)
 target_include_directories(cnc_sim_core PUBLIC src)
 find_package(Threads REQUIRED)
-target_link_libraries(cnc_sim_core PUBLIC stepper_ninja_original Threads::Threads)
+find_package(glm REQUIRED)
+target_link_libraries(cnc_sim_core PUBLIC stepper_ninja_original Threads::Threads glm::glm)
 target_compile_options(cnc_sim_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 
 add_executable(cnc-sim src/main.cpp)
 target_link_libraries(cnc-sim PRIVATE cnc_sim_core)
 target_compile_options(cnc-sim PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 
+option(CNC_SIM_RENDER "Build the optional OpenGL 3.3 renderer" ON)
+if(CNC_SIM_RENDER)
+    find_package(OpenGL REQUIRED)
+    find_package(glfw3 3.3 REQUIRED)
+    add_library(cnc_sim_render STATIC src/render/Renderer.cpp src/render/Camera.cpp)
+    target_link_libraries(cnc_sim_render PUBLIC cnc_sim_core PRIVATE OpenGL::GL glfw)
+    target_compile_options(cnc_sim_render PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+    target_link_libraries(cnc-sim PRIVATE cnc_sim_render)
+    target_compile_definitions(cnc-sim PRIVATE CNC_SIM_RENDER=1)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(phase4a-tests tests/phase4a_tests.cpp)
+    target_link_libraries(phase4a-tests PRIVATE cnc_sim_core)
+    target_compile_options(phase4a-tests PRIVATE -Wall -Wextra -Wpedantic)
+    foreach(test volume mesher snapshot)
+        add_test(NAME phase4a-${test} COMMAND phase4a-tests ${test})
+        set_tests_properties(phase4a-${test} PROPERTIES TIMEOUT 30)
+    endforeach()
+    option(CNC_SIM_RENDER_TESTS "Run desktop-dependent renderer tests" OFF)
+    if(CNC_SIM_RENDER_TESTS)
+        if(NOT CNC_SIM_RENDER)
+            message(FATAL_ERROR "CNC_SIM_RENDER_TESTS requires CNC_SIM_RENDER")
+        endif()
+        add_executable(render-smoke tests/render_smoke.cpp)
+        target_link_libraries(render-smoke PRIVATE cnc_sim_render OpenGL::GL glfw)
+        add_test(NAME render-smoke COMMAND render-smoke)
+        set_tests_properties(render-smoke PROPERTIES LABELS renderer TIMEOUT 60)
+    endif()
     add_executable(protocol-tests tests/protocol_tests.cpp)
     target_link_libraries(protocol-tests PRIVATE cnc_sim_core)
     target_compile_options(protocol-tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -60,6 +92,14 @@ if(BUILD_TESTING)
         add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
     endif()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME phase4a-cli COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/phase4a_cli.py" "$<TARGET_FILE:cnc-sim>")
+    set_tests_properties(phase4a-cli PROPERTIES TIMEOUT 30)
+    if(CNC_SIM_RENDER_TESTS)
+        add_test(NAME render-integration COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/render_integration.py" "$<TARGET_FILE:cnc-sim>")
+        set_tests_properties(render-integration PROPERTIES LABELS renderer TIMEOUT 60)
+    endif()
     add_test(NAME phase3-configuration COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/phase3_configuration.py")
     foreach(test io_integration io_terminal)

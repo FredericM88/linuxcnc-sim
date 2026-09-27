@@ -1,4 +1,4 @@
-# Virtueller Stepper-Ninja – Phase 3
+# Virtueller Stepper-Ninja – Phase 4A
 
 Ein Linux-C++20-Programm empfängt die originalen Stepper-Ninja-UDP-Pakete,
 dekodiert Step-Bursts, integriert vier virtuelle Motorpositionen in `int64_t`
@@ -16,6 +16,7 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 | Phase 1: virtuelle Stepper-Ninja-UDP-Hardware und Motion-Anbindung | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 2: Terminaloberfläche und Motion Recorder | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
+| Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | implementiert und automatisiert getestet; interaktive LinuxCNC-Grafikabnahme ausstehend |
 
 Die reale Abnahme wurde vom Benutzer bestätigt. In Phase 3 liefen Simulator und
 LinuxCNC stabil mit **RX = accepted = TX**; Invalid-Pakete, Send Errors, Length
@@ -56,7 +57,9 @@ Routingdienst oder permanenter Netzwerkeintrag ist erforderlich.
 
 ## Bauen und testen
 
-Voraussetzungen: Linux, CMake >=3.20, C-/C++20-Compiler, Make oder Ninja.
+Voraussetzungen: Linux, CMake >=3.20, C-/C++20-Compiler, Make oder Ninja,
+GLM (`libglm-dev`). Der optionale Renderer wird standardmäßig mitgebaut und
+benötigt `libgl1-mesa-dev` und `libglfw3-dev`; `mesa-utils` dient der Diagnose.
 Tests benötigen zusätzlich Python 3 und Bash. Für veth: iproute2. Die
 normalen Protokoll-/UDP-Tests benötigen weder Root noch LinuxCNC.
 
@@ -72,6 +75,44 @@ Hostnetz nicht. Ist diese Kernel-Funktion gesperrt, meldet CTest diesen Test
 als übersprungen; die übrigen Tests laufen trotzdem. Der Release-Build kann
 mit `-DCMAKE_BUILD_TYPE=Release` konfiguriert werden. Ohne Tests ist Python
 nicht erforderlich: `-DBUILD_TESTING=OFF`.
+
+## Phase 4A: optionale 3D-Ansicht
+
+```bash
+./build/cnc-sim --render --bind 127.0.0.1 --steps-per-unit 400,400,400,400
+```
+
+Das Beispiel öffnet die lokale Ansicht ohne LinuxCNC-Verbindung. Für LinuxCNC
+im vorhandenen Netzwerk-Namespace siehe den [vollständigen Grafik-Start und
+10/10/2-mm-Abnahmetest](docs/phase4a-test.md#konkrete-manuelle-linuxcnc-abnahme).
+Die bisherige Nutzung ohne `--render` bleibt erhalten.
+
+Dargestellt werden ein 50×50×10-mm-Rohteil (Oberseite Z=0), ein 6-mm-Flachfräser,
+Tisch und XYZ-Achsen in Rot/Grün/Blau. Die Werkzeugspitze folgt ausschließlich den
+bestehenden int64-Step-Positionen. Linke Maustaste: Orbit; mittlere: Pan;
+Mausrad: Zoom; Home: Fit Scene. Der Fenstertitel zeigt XYZ in mm.
+
+Konfiguration: `--voxel-size 0.1`, `--stock-size 50,50,10`,
+`--stock-origin 0,0,-10`, `--stock-rotation 0,0,0` (Grad, Rz·Ry·Rx).
+Sparse-Volumen und CPU-Mesher sind OpenGL-unabhängig; keine Voxelarrays für das
+unbearbeitete Rohteil. **Phase 4A enthält keinen Materialabtrag oder Tool Sweep.**
+
+```bash
+# Grafiktests bewusst separat aktivieren (Desktop erforderlich):
+cmake -S . -B build -DCNC_SIM_RENDER_TESTS=ON
+cmake --build build -j4
+ctest --test-dir build --output-on-failure
+
+# Komplett ohne OpenGL-/GLFW-Abhängigkeit bauen und headless testen:
+cmake -S . -B build-headless -DCNC_SIM_RENDER=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build-headless -j4
+env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-failure
+```
+
+Geprüft: **22/22 Tests mit Grafiktests**, **20/20 im Headless-Release-Build**,
+keine Fehler/Skips; auch OpenGL 3.3 Core auf Mesa/radeonsi erfolgreich geprüft.
+Details: [Architektur und Entscheidungen](docs/phase4a-design.md),
+[Testergebnisse und manuelle Abnahme](docs/phase4a-test.md).
 
 ## Start für LinuxCNC
 
@@ -296,8 +337,9 @@ enthalten, einschließlich der benötigten relativen Symlinks, ohne Submodule.
 Herkunft, bewusst ausgeschlossene Upstream-Artefakte, Verzeichnisstruktur und
 lokale/generierte Dateien beschreibt [docs/repository.md](docs/repository.md).
 Paketgrößen, alle Offsets, Profil und Little Endian werden beim Kompilieren abgesichert. Das Programm unterstützt in dieser
-Phase Linux auf Little-Endian-Systemen. Es gibt keine Simulator-GUI, Qt,
-OpenGL, Materialsimulation, EtherCAT oder einen eigenen G-Code-Interpreter.
+Phase Linux auf Little-Endian-Systemen. Die optionale OpenGL-Ansicht erweitert
+den Simulator um Visualisierung. Materialabtrag, Qt, EtherCAT und ein eigener
+G-Code-Interpreter sind nicht enthalten.
 
 Die Antwort bestätigt den Empfang, keine mechanisch gemessene Bewegung. Der
 originale HAL-Treiber erzeugt `motor-pos-fb` selbst aus seinem Sollwert. Ein
