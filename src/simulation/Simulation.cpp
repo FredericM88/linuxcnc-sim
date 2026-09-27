@@ -7,7 +7,21 @@ namespace cnc {
 Simulation::Simulation(const std::string& address, std::uint16_t port, Scales scales,
                        const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene)
     : device_(scales), server_(address, port),
-      volume_(scene ? std::make_unique<const SparseVoxelVolume>(*scene) : nullptr), scales_(scales) {
+      scales_(scales) {
+    if (scene) {
+        auto volume = std::make_shared<const SparseVoxelVolume>(*scene);
+        validate_workpiece_volume(*volume);
+        WorkpieceConfig config;
+        config.size_mm = scene->stock_size_mm;
+        const bool rotated = volume->config().workpiece.orientation != glm::dquat(1,0,0,0);
+        // The minimum corner is invariant under a legacy rotation about local zero.
+        // Selecting it keeps position a true G53 reference point even in legacy scenes.
+        config.origin_offset_mm = rotated ? glm::dvec3(0) : glm::dvec3(0, 0, config.size_mm.z);
+        config.position_machine_mm = scene->workpiece.translation + config.origin_offset_mm;
+        config.voxel_size_mm = scene->volume.voxel_size_mm;
+        workpiece_ = std::make_shared<const WorkpieceSnapshot>(WorkpieceSnapshot{
+            config, volume, 1, rotated});
+    } else configure_workpiece(WorkpieceConfig{});
     for (const auto& command : initial_io) sensors_.execute(command, device_.machine().positions());
     published_.io = sensors_.status();
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
@@ -24,6 +38,22 @@ SimulationStatus Simulation::status() const {
 MachineSnapshot Simulation::machine_snapshot() const {
     std::lock_guard lock(mailbox_);
     return {published_.positions, scales_, published_.packets.accepted_packets};
+}
+std::shared_ptr<const WorkpieceSnapshot> Simulation::workpiece_snapshot() const {
+    std::lock_guard lock(workpiece_mutex_);
+    return workpiece_;
+}
+void Simulation::configure_workpiece(const WorkpieceConfig& config) {
+    // All validation/allocation precedes publication. Readers retain old snapshots.
+    auto next = std::make_shared<WorkpieceSnapshot>();
+    next->config = config;
+    next->volume = build_workpiece(config);
+    std::shared_ptr<const WorkpieceSnapshot> published = next;
+    {
+        std::lock_guard lock(workpiece_mutex_);
+        next->revision = workpiece_ ? workpiece_->revision + 1 : 1;
+        workpiece_.swap(published);
+    }
 }
 CommandResult Simulation::command(Action action, IOCommand io) {
     auto request = std::make_unique<Pending>();

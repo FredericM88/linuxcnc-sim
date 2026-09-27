@@ -1,4 +1,4 @@
-# Virtueller Stepper-Ninja – Phase 4A
+# Virtueller Stepper-Ninja – Phase 4A.1
 
 Ein Linux-C++20-Programm empfängt die originalen Stepper-Ninja-UDP-Pakete,
 dekodiert Step-Bursts, integriert vier virtuelle Motorpositionen in `int64_t`
@@ -17,6 +17,7 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 | Phase 2: Terminaloberfläche und Motion Recorder | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | implementiert und automatisiert getestet; interaktive LinuxCNC-Grafikabnahme ausstehend |
+| Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | Runtime-Konsole, transaktionale Snapshots und Rebuild implementiert |
 
 Die reale Abnahme wurde vom Benutzer bestätigt. In Phase 3 liefen Simulator und
 LinuxCNC stabil mit **RX = accepted = TX**; Invalid-Pakete, Send Errors, Length
@@ -92,10 +93,48 @@ Tisch und XYZ-Achsen in Rot/Grün/Blau. Die Werkzeugspitze folgt ausschließlich
 bestehenden int64-Step-Positionen. Linke Maustaste: Orbit; mittlere: Pan;
 Mausrad: Zoom; Home: Fit Scene. Der Fenstertitel zeigt XYZ in mm.
 
-Konfiguration: `--voxel-size 0.1`, `--stock-size 50,50,10`,
+Kompatible Startoptionen: `--voxel-size 0.1`, `--stock-size 50,50,10`,
 `--stock-origin 0,0,-10`, `--stock-rotation 0,0,0` (Grad, Rz·Ry·Rx).
 Sparse-Volumen und CPU-Mesher sind OpenGL-unabhängig; keine Voxelarrays für das
 unbearbeitete Rohteil. **Phase 4A enthält keinen Materialabtrag oder Tool Sweep.**
+
+## Werkstück zur Laufzeit konfigurieren (Phase 4A.1)
+
+```text
+workpiece size 100 60 20
+workpiece position 50 30 0
+workpiece origin 10 center max
+workpiece voxel 0.10
+workpiece show
+workpiece reset
+```
+
+`size` sind die physischen Rohteilabmessungen in mm. `position` ist die
+**G53-Maschinenposition des ausgewählten Bezugspunkts**. `origin` ist dessen
+**Offset vom Rohteilminimum**, pro Achse als mm-Zahl oder `min`, `center`, `max`.
+Gemischte Eingaben sind zulässig. Es gilt `machine_min = position - origin`
+und `machine_max = machine_min + size`. Das Beispiel ergibt Min (40,0,-20)
+und Max (140,60,0) mm. LinuxCNC verwaltet G54/G55; der Simulator wendet keinen
+zusätzlichen Work Offset an.
+
+Die Symbole werden einmalig in Zahlen aufgelöst. Größenänderungen behalten den
+numerischen Origin; liegt er danach außerhalb `[0,size]`, wird die Änderung
+vollständig abgewiesen. Auch NaN/Inf, nichtpositive Größen/Auflösungen,
+Indexüberläufe und Jobs über 65536 Chunks werden abgewiesen.
+
+Jede gültige Änderung erstellt frisches Rohmaterial, erscheint ohne Neustart im
+OpenGL-Fenster und aktualisiert Home/Fit. Das Werkzeug bleibt an seiner tatsächlichen
+Maschinenposition. UDP läuft unabhängig vom Rebuild weiter. Alle Befehle
+funktionieren auch headless. `show` zeigt die vollständige Transformation.
+`reset` stellt die zentralen Defaults wieder her: Größe 50×50×10 mm,
+Position (0,0,0), Origin (0,0,10), Voxel 0,10 mm; Oberseite Z=0.
+
+Die alte CLI-Option `--stock-origin` bleibt eine Minimum-Translation. Eine mit
+`--stock-rotation` gestartete Szene bleibt bis zum ersten gültigen schreibenden
+`workpiece`-Befehl rotiert; die Konsole meldet den Wechsel zum achsparallelen
+Modell. Nicht teilbare Abmessungen bleiben wie in Phase 4A nach außen gerastert;
+`show` zeigt die ungerundeten physischen Grenzen. Details und Grenzen:
+[Phase-4A.1-Architektur](docs/phase4a1-design.md).
 
 ```bash
 # Grafiktests bewusst separat aktivieren (Desktop erforderlich):
@@ -109,7 +148,7 @@ cmake --build build-headless -j4
 env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-failure
 ```
 
-Geprüft: **22/22 Tests mit Grafiktests**, **20/20 im Headless-Release-Build**,
+Geprüft: **26/26 Tests mit Grafiktests**, **24/24 im Headless-Release-Build**,
 keine Fehler/Skips; auch OpenGL 3.3 Core auf Mesa/radeonsi erfolgreich geprüft.
 Details: [Architektur und Entscheidungen](docs/phase4a-design.md),
 [Testergebnisse und manuelle Abnahme](docs/phase4a-test.md).

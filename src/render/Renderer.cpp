@@ -5,6 +5,7 @@
 #include "render/Renderer.hpp"
 #include "render/Camera.hpp"
 #include "meshing/SurfaceMesher.hpp"
+#include "simulation/Workpiece.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -131,9 +132,7 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
     if (tool.kind != ToolKind::FlatEndMill || !std::isfinite(tool.diameter_mm) || !std::isfinite(tool.length_mm) ||
         tool.diameter_mm <= 0 || tool.length_mm <= 0) throw std::invalid_argument("Phase 4A requires a finite positive flat end mill");
     p.tool = tool;
-    const auto last = volume.last_chunk();
-    const long double count = (static_cast<long double>(last.x) + 1) * (static_cast<long double>(last.y) + 1) * (static_cast<long double>(last.z) + 1);
-    if (count > 65536) throw std::invalid_argument("renderer stock exceeds 65536 chunks; increase --voxel-size");
+    validate_workpiece_volume(volume);
     if (!glfwInit()) throw std::runtime_error(glfw_error("GLFW initialization failed"));
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -159,6 +158,22 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
     p.model_location = glGetUniformLocation(p.program, "model"); p.vp_location = glGetUniformLocation(p.program, "vp");
     p.color_location = glGetUniformLocation(p.program, "color"); p.unlit_location = glGetUniformLocation(p.program, "unlit");
     glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    p.tool_mesh = std::make_unique<GpuMesh>(cylinder(tool));
+    set_workpiece(volume);
+    glfwSetWindowUserPointer(p.window, &p);
+    glfwSetScrollCallback(p.window, [](GLFWwindow* window, double, double dy) {
+        static_cast<Impl*>(glfwGetWindowUserPointer(window))->camera.zoom(dy);
+    });
+    glfwSetKeyCallback(p.window, [](GLFWwindow* window, int key, int, int action, int) {
+        if (key == GLFW_KEY_HOME && action == GLFW_PRESS)
+            static_cast<Impl*>(glfwGetWindowUserPointer(window))->fit_requested = true;
+    });
+}
+void Renderer::set_workpiece(const SparseVoxelVolume& volume) {
+    validate_workpiece_volume(volume);
+    auto& p = *impl_;
+    const auto last = volume.last_chunk();
+    p.stock.clear(); // Full invalidation also removes chunks absent in the new volume.
     p.workpiece = glm::mat4(volume.config().workpiece.matrix());
     p.scene_min = glm::dvec3(0); p.scene_max = glm::dvec3(0);
     for (int corner = 0; corner < 8; ++corner) {
@@ -183,10 +198,9 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
     }
     p.axes = std::make_unique<GpuMesh>(axes);
     p.scene_max = glm::max(p.scene_max, glm::dvec3(axis_length));
-    p.tool_mesh = std::make_unique<GpuMesh>(cylinder(tool));
     SurfaceMesher mesher;
     // CPU extraction and GPU upload are separate operations, both outside the
-    // UDP worker/mailbox. The static Phase-4A scene is built exactly once.
+    // UDP worker/mailbox. Every published revision defines fresh raw stock.
     DirtyChunks dirty;
     for (std::int64_t zc = 0; zc <= last.z; ++zc) for (std::int64_t yc = 0; yc <= last.y; ++yc) for (std::int64_t xc = 0; xc <= last.x; ++xc)
         dirty.mark({xc,yc,zc});
@@ -197,14 +211,7 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
         if (glfwWindowShouldClose(p.window)) throw std::runtime_error("renderer closed during scene creation");
     }
     if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL scene upload failed");
-    glfwSetWindowUserPointer(p.window, &p);
-    glfwSetScrollCallback(p.window, [](GLFWwindow* window, double, double dy) {
-        static_cast<Impl*>(glfwGetWindowUserPointer(window))->camera.zoom(dy);
-    });
-    glfwSetKeyCallback(p.window, [](GLFWwindow* window, int key, int, int action, int) {
-        if (key == GLFW_KEY_HOME && action == GLFW_PRESS)
-            static_cast<Impl*>(glfwGetWindowUserPointer(window))->fit_requested = true;
-    });
+    p.fit_requested = true;
 }
 Renderer::~Renderer() = default;
 bool Renderer::draw(const MachineSnapshot& snapshot) {

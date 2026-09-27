@@ -13,6 +13,7 @@
 #include <sstream>
 #include "console/TerminalUI.hpp"
 #include "console/IOCommands.hpp"
+#include "console/WorkpieceCommands.hpp"
 #include "simulation/Simulation.hpp"
 #ifdef CNC_SIM_RENDER
 #include "render/Renderer.hpp"
@@ -93,7 +94,7 @@ void usage() {
         "  --render                    Open optional OpenGL 3.3 window\n"
         "  --voxel-size MM             Positive voxel edge; default 0.1\n"
         "  --stock-size X,Y,Z          Stock dimensions in mm; default 50,50,10\n"
-        "  --stock-origin X,Y,Z        Local origin in machine mm; default 0,0,-10\n"
+        "  --stock-origin X,Y,Z        Legacy minimum-corner translation; default 0,0,-10\n"
         "  --stock-rotation X,Y,Z      Euler degrees; Rz * Ry * Rx; default 0,0,0\n"
         "  --help                      Show this help\n"
         "Default: fixed interactive terminal (5 Hz); type help for commands.\nPositions start at zero. Scales and units are local configuration, not wire data.\n";
@@ -234,7 +235,7 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                             "record save <file>: CSV snapshot; status: refresh; help; quit: exit\n"
                             "Aliases: begin record, stop record, clear record, save record <file>\n"
                             "input show | n on/off | clear; limits show; probe show\n"
-                            "help io: sensor configuration in steps";
+                            "help io: sensor configuration in steps\n" + std::string(cnc::workpiece_help);
                         if (extra == "io") message = "input show | input n on/off | input clear (manual OR automatic)\n"
                             "limits set X min <trigger_steps> <hysteresis_steps> <input>\n"
                             "limits off X min; limits show (X/Y/Z; min/max)\n"
@@ -243,6 +244,13 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                     } else if (first == "input" || first == "limits" || first == "probe") {
                         const auto command = cnc::parse_io_command(line);
                         message = cnc::describe_io(command, simulation.command(cnc::Action::IO, command).io);
+                    } else if (first == "workpiece") {
+                        const auto before = simulation.workpiece_snapshot();
+                        const auto command = cnc::parse_workpiece_command(line, before->config);
+                        if (!command.show) simulation.configure_workpiece(command.config);
+                        message = cnc::describe_workpiece(*simulation.workpiece_snapshot());
+                        if (!command.show && before->legacy_rotation)
+                            message += "\nLegacy rotation cleared: axis-aligned fresh raw stock.";
                     } else if (first == "status") {
                         if (parser >> extra) throw std::runtime_error("usage: status");
                         message = simulation.command(cnc::Action::Status).message;
@@ -323,17 +331,26 @@ int main(int argc, char** argv) {
         ignore.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &ignore, nullptr);
         cnc::Simulation simulation(options.bind_address, options.port, options.scales, options.initial_io,
-                                   options.render ? std::optional(options.scene) : std::nullopt);
+                                   options.scene);
 #ifdef CNC_SIM_RENDER
         if (options.render) {
-            cnc::Renderer renderer(*simulation.volume());
+            auto rendered = simulation.workpiece_snapshot();
+            cnc::Renderer renderer(*rendered->volume);
             std::exception_ptr console_error;
             std::jthread console([&] {
                 try { run_console(simulation, options); }
                 catch (...) { console_error = std::current_exception(); stopping = true; }
             });
             try {
-                while (!stopping && renderer.draw(simulation.machine_snapshot())) renderer.present();
+                while (!stopping) {
+                    const auto active = simulation.workpiece_snapshot();
+                    if (active != rendered) {
+                        renderer.set_workpiece(*active->volume);
+                        rendered = active;
+                    }
+                    if (!renderer.draw(simulation.machine_snapshot())) break;
+                    renderer.present();
+                }
             } catch (...) {
                 stopping = true;
                 console.join();

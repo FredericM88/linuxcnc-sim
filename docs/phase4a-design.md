@@ -1,5 +1,11 @@
 # Phase 4A: Sparse-Volumen und Live-Visualisierung
 
+> Historische Beschreibung der Phase-4A-Baseline. Seit Phase 4A.1 sind
+> Simulation und Renderer zur Laufzeit konfigurierbar. Die statischen
+> Besitz-/Startmeshing-Aussagen unten werden durch
+> [phase4a1-design.md](phase4a1-design.md) ersetzt. Sparse- und Protokollmodell
+> bleiben erhalten.
+
 Phase 4A ergänzt die funktionierende Phase-1–3-Baseline `d2fcb37` um eine
 optionale OpenGL-Ansicht. Die verbindliche Aufgabenbeschreibung liegt in
 [`codex_phase4a_linuxcnc_sim.md`](../codex_phase4a_linuxcnc_sim.md).

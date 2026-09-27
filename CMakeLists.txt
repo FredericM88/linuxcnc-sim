@@ -24,6 +24,8 @@ add_library(cnc_sim_core STATIC
     src/network/UdpServer.cpp
     src/recorder/MotionRecorder.cpp
     src/simulation/Simulation.cpp
+    src/simulation/Workpiece.cpp
+    src/console/WorkpieceCommands.cpp
     src/console/TerminalUI.cpp
     src/console/IOCommands.cpp
     src/io/VirtualIO.cpp
@@ -55,6 +57,13 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(workpiece-tests tests/workpiece_tests.cpp)
+    target_link_libraries(workpiece-tests PRIVATE cnc_sim_core)
+    target_compile_options(workpiece-tests PRIVATE -Wall -Wextra -Wpedantic)
+    foreach(test geometry transactions runtime)
+        add_test(NAME workpiece-${test} COMMAND workpiece-tests ${test})
+        set_tests_properties(workpiece-${test} PROPERTIES TIMEOUT 30)
+    endforeach()
     add_executable(phase4a-tests tests/phase4a_tests.cpp)
     target_link_libraries(phase4a-tests PRIVATE cnc_sim_core)
     target_compile_options(phase4a-tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -92,6 +101,9 @@ if(BUILD_TESTING)
         add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
     endif()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME workpiece-cli COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/workpiece_cli.py" "$<TARGET_FILE:cnc-sim>")
+    set_tests_properties(workpiece-cli PROPERTIES TIMEOUT 30)
     add_test(NAME phase4a-cli COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/phase4a_cli.py" "$<TARGET_FILE:cnc-sim>")
     set_tests_properties(phase4a-cli PROPERTIES TIMEOUT 30)

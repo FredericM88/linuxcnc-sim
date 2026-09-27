@@ -7,7 +7,7 @@
 #include "protocol/StepperNinjaProtocol.hpp"
 #include "recorder/MotionRecorder.hpp"
 #include "io/VirtualSensors.hpp"
-#include "volume/SparseVoxelVolume.hpp"
+#include "simulation/Workpiece.hpp"
 #include "tool/Tool.hpp"
 
 namespace cnc {
@@ -37,7 +37,10 @@ public:
     std::uint16_t port() const { return server_.port(); }
     SimulationStatus status() const;
     MachineSnapshot machine_snapshot() const;
-    const SparseVoxelVolume* volume() const { return volume_.get(); }
+    std::shared_ptr<const SparseVoxelVolume> volume() const { return workpiece_snapshot()->volume; }
+    std::shared_ptr<const WorkpieceSnapshot> workpiece_snapshot() const;
+    // Runs on the console caller, never on the UDP worker. Fresh raw stock per edit.
+    void configure_workpiece(const WorkpieceConfig& config);
     // Only one UI caller; completion is at a packet boundary, never mid-packet.
     CommandResult command(Action action, IOCommand io = {});
     void stop();
@@ -48,7 +51,8 @@ private:
     UdpServer server_;
     MotionRecorder recorder_;
     VirtualSensors sensors_;
-    std::unique_ptr<const SparseVoxelVolume> volume_; // Immutable Phase-4A scene.
+    mutable std::mutex workpiece_mutex_; // Never acquired by UDP.
+    std::shared_ptr<const WorkpieceSnapshot> workpiece_;
     Scales scales_;
     mutable std::mutex mailbox_;
     SimulationStatus published_;

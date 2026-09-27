@@ -77,7 +77,17 @@ void TerminalUI::draw(const std::string& status, const std::string& message) {
     std::istringstream stream(status);
     for (std::string line; std::getline(stream, line);) lines.push_back(std::move(line));
     std::istringstream messages(message);
-    for (std::string line; std::getline(messages, line);) lines.push_back(std::move(line));
+    std::vector<std::string> reply;
+    for (std::string line; std::getline(messages, line);) reply.push_back(std::move(line));
+    // Keep complete command output visible on ordinary 80x24 terminals.
+    // The live dashboard yields rows to longer replies such as workpiece show.
+    if (rows >= reply.size() + 2 && lines.size() + reply.size() + 2 > rows) {
+        const auto keep = rows - reply.size() - 2;
+        const auto prefix = std::min(std::size_t{2}, keep);
+        lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(prefix),
+                    lines.end() - static_cast<std::ptrdiff_t>(keep - prefix));
+    }
+    lines.insert(lines.end(), reply.begin(), reply.end());
     if (rows < lines.size() + 2 || cols < 60) lines = {"Terminal too small; enlarge to at least 80 x 24."};
     lines.emplace_back();
     // Use an ASCII display of input (UTF-8 bytes remain intact in the actual command).

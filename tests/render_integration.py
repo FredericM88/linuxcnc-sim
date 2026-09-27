@@ -44,8 +44,19 @@ def main():
                 sock.settimeout(1)
                 start = time.monotonic()
                 for i in range(1000):
+                    if i == 100:
+                        command("workpiece size 100 60 20")
+                    if i == 300:
+                        command("workpiece origin center center max")
+                    if i == 500:
+                        command("workpiece position 10 20 30")
+                    if i == 700:
+                        command("workpiece voxel .2")
+                    if i == 900:
+                        command("workpiece reset")
                     latencies.append(exchange(sock, target, i & 255, 4))
                     time.sleep(max(0, start + (i+1)*.001 - time.monotonic()))
+            wait_for(r"Workpiece \(revision 6\)")
             command("record stop")
             wait_for("Recording stopped")
             command(f"record save {output}")
@@ -63,7 +74,7 @@ def main():
             assert len(rows) == 1001 and rows[-1]["x_steps"] == "4000"
             assert all(int(row["x_steps"]) == i*4 for i, row in enumerate(rows))
             ordered = sorted(latencies)
-            print(f"PASS: 1000 original UDP exchanges with GL + recorder; "
+            print(f"PASS: 1000 original UDP exchanges during GL remeshing + recorder; "
                   f"RTT median={ordered[500]*1000:.3f} ms p99={ordered[990]*1000:.3f} ms "
                   f"max={max(ordered)*1000:.3f} ms (diagnostic, not hard realtime)")
         finally:

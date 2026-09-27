@@ -12,6 +12,7 @@ public:
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
+    void set_workpiece(const SparseVoxelVolume& volume);
     bool draw(const MachineSnapshot& snapshot);
     void present();
 private:

@@ -184,3 +184,72 @@ GPU-Positionen verwenden float; für extreme Maschinenkoordinaten ist dies keine
 Präzisionsvisualisierung. Snapshot etwa 50 Hz, Anzeige bis etwa 60 Hz;
 keine Bewegungsinterpolation. Core-/UDP-Erfolg ersetzt nicht die oben beschriebene
 interaktive LinuxCNC- und Kamerabedienungsabnahme.
+
+## Phase 4A.1: Runtime-Konfiguration und Regressionen
+
+Die Aussagen zu statischem Meshing und unveränderlicher Szene oben beschreiben
+die Phase-4A-Baseline. Seit 4A.1 gilt die
+[Runtime-Architektur](phase4a1-design.md). Ausgangscommit für diese Erweiterung:
+`10206f001f3afa00a341ce039996d3c8ee5645b2`.
+
+Beide oben beschriebenen Buildvarianten wurden als Release gebaut und ihre
+vollständigen Suiten ausgeführt. Ergebnisse am 27.09.2026:
+
+| Variante / Prüfung | Ergebnis |
+|---|---|
+| `CNC_SIM_RENDER=ON`, `CNC_SIM_RENDER_TESTS=ON` | 26/26 bestanden, keine Fehler oder Skips |
+| `CNC_SIM_RENDER=OFF`, ohne DISPLAY/WAYLAND_DISPLAY | 24/24 bestanden, keine Fehler oder Skips |
+| `ldd build-headless/cnc-sim` | Keine OpenGL-/GLFW-Abhängigkeit |
+| OpenGL-3.3-/GLSL-330-Override, `render-smoke` | bestanden, einschließlich Runtime-Rebuilds |
+| Compiler | Keine Warnungen in beiden Builds |
+| Protected-source-Diff gegen Ausgangscommit | Keine Änderung in `stepper-ninja/`, `third_party/`, `src/protocol/`, `src/machine/`, `src/network/`, `src/io/` |
+| `vendor-integrity` | Alle neun Produktionsdateien entsprechen SHA-256-Manifest und Originalquellen |
+
+Neue und erweiterte Prüfungen:
+
+- `workpiece-geometry`: alle drei Spezifikationsbeispiele, gemischter Origin,
+  kontinuierliche Offsets, Exponenten/Zahlenvorzeichen, numerisch beibehaltener
+  Origin bei Größenänderung, zentrale Reset-Defaults.
+- `workpiece-transactions`: ungültige Syntax/Arity, NaN/Inf, negative und zu große
+  Origins, ungültiges Verkleinern, nichtpositive/extreme Voxelwerte,
+  Chunkbudget/Overflow. Snapshot-Identität und Revision bleiben unverändert;
+  unabhängige API-Validierung und physische gegenüber gerasterten Bounds.
+- `workpiece-runtime`: parallele Leser während 100 Veröffentlichungen,
+  zusammengehörige Config/Volumen/Revision, gültige alte Snapshots, frisches
+  Rohmaterial, geänderte Voxelzahl und Meshergebnisse, entfernte Chunks,
+  Reset, Legacy-Rotation und unveränderte Werkzeugquelle.
+- `workpiece-cli`: echter Prozess, Befehle, vollständiges `show`, transaktionale
+  Fehler, alte Startoptionen, Hilfe, 80×24-PTY und Terminalwiederherstellung.
+- `render-smoke`: derselbe GL-Context zeigt nach Position, Origin, Größe,
+  Voxelauflösung und Reset jeweils geänderte Rohteilpixel; Kamera und GL-Fehler
+  bleiben geprüft. Das Werkzeug erhält weiterhin ausschließlich MachineSnapshots.
+- `render-integration`: 1000 originale UDP-Antworten während mehrerer
+  Konsolenänderungen und GL-Remeshings; RX=accepted=TX=1000, keine ID-Lücken,
+  exakt 1001 Recorder-Samples mit den ursprünglichen Stepwerten.
+- Alle bisherigen Protokoll-, HAL-, Namespace-, Recorder-, Terminal-, I/O-,
+  Sensor-, CLI-, Sparse-Volume-, Mesher- und Snapshot-Tests bestehen weiterhin.
+
+Die vollständigen Laufprotokolle bleiben lokal in
+`build/Testing/Temporary/LastTest.log` und
+`build-headless/Testing/Temporary/LastTest.log`.
+
+Für die manuelle LinuxCNC-Prüfung bleibt der bestehende Startpfad gültig:
+
+```bash
+sudo ip netns exec cnc-sim-ns runuser -u "$USER" -- env \
+  DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
+  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  ./build/cnc-sim --render --steps-per-unit 400,400,400,400 \
+  --io-config examples/phase3/virtual-io.conf
+```
+
+Im laufenden Simulator nacheinander `workpiece size 100 60 20`,
+`workpiece origin center center max`, `workpiece position 50 30 0`,
+`workpiece voxel 0.2`, `workpiece show` und `workpiece reset` eingeben.
+Bounds mit der Formel vergleichen und Home/Fit prüfen. Während LinuxCNC-Motion
+weitere Änderungen senden; Werkzeugkoordinaten, Recorder, VirtualIO und Probe
+müssen unverändert ihrer bisherigen Quelle folgen. Ungültiges `workpiece size 1 1 1` bei zu großem numerischem Origin muss die letzte gültige Szene erhalten.
+Eine interaktive LinuxCNC-Abnahme wurde für 4A.1 noch nicht durchgeführt;
+automatisierte GL-, Wire- und Namespace-Tests ersetzen diese Bedienungsprüfung
+nicht. Kein Materialabtrag ist implementiert. Große Rebuilds pausieren die
+Grafikausgabe, nicht UDP; die bestehenden Raster-/Float-Grenzen gelten weiter.
