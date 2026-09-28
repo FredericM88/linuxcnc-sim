@@ -33,6 +33,7 @@ add_library(cnc_sim_core STATIC
     src/io/VirtualSensors.cpp
     src/volume/SparseVoxelVolume.cpp
     src/meshing/SurfaceMesher.cpp
+    src/meshing/MeshWorkers.cpp
     src/tool/Tool.cpp
     src/material/MaterialRemoval.cpp
     src/material/MaterialWorker.cpp
@@ -60,10 +61,22 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(material-concurrency tests/material_concurrency.cpp)
+    target_link_libraries(material-concurrency PRIVATE cnc_sim_core)
+    target_compile_options(material-concurrency PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME material-concurrency COMMAND material-concurrency)
+    set_tests_properties(material-concurrency PROPERTIES TIMEOUT 60)
+    add_executable(material-benchmark tests/material_benchmark.cpp)
+    target_link_libraries(material-benchmark PRIVATE cnc_sim_core)
+    target_compile_options(material-benchmark PRIVATE -Wall -Wextra -Wpedantic)
+    foreach(segments 1 20 200 4000)
+        add_test(NAME material-benchmark-${segments} COMMAND material-benchmark ${segments})
+        set_tests_properties(material-benchmark-${segments} PROPERTIES TIMEOUT 60)
+    endforeach()
     add_executable(material-tests tests/material_tests.cpp)
     target_link_libraries(material-tests PRIVATE cnc_sim_core)
     target_compile_options(material-tests PRIVATE -Wall -Wextra -Wpedantic)
-    foreach(test geometry spacing boundary quantitative queue runtime failure)
+    foreach(test geometry spacing boundary quantitative queue runtime failure coalescing)
         add_test(NAME material-${test} COMMAND material-tests ${test})
         set_tests_properties(material-${test} PROPERTIES TIMEOUT 60)
     endforeach()

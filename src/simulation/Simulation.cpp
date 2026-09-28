@@ -5,7 +5,7 @@
 
 namespace cnc {
 Simulation::Simulation(const std::string& address, std::uint16_t port, Scales scales,
-                       const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene)
+                       const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene, MaterialWorkerConfig workers)
     : device_(scales), server_(address, port),
       scales_(scales) {
     if (scene) {
@@ -24,7 +24,7 @@ Simulation::Simulation(const std::string& address, std::uint16_t port, Scales sc
     } else configure_workpiece(WorkpieceConfig{});
     for (const auto& command : initial_io) sensors_.execute(command, device_.machine().positions());
     published_.io = sensors_.status();
-    material_ = std::make_unique<MaterialWorker>(workpiece_snapshot());
+    material_ = std::make_unique<MaterialWorker>(workpiece_snapshot(), workers);
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
 }
 Simulation::~Simulation() { stop(); }

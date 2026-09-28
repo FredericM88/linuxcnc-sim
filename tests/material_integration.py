@@ -11,6 +11,10 @@ from udp_integration import exchange
 
 binary = str(pathlib.Path(sys.argv[1]).resolve())
 render = sys.argv[2:] == ["--render"]
+for flag, value in [("--material-workers", "0"), ("--material-workers", "2"),
+                    ("--mesh-workers", "33"), ("--mesh-workers", "-1")]:
+    rejected = subprocess.run([binary, flag, value], capture_output=True, text=True, timeout=5)
+    assert rejected.returncode == 1 and "cnc-sim:" in rejected.stderr, rejected
 with tempfile.TemporaryFile(mode="w+") as log:
     process = subprocess.Popen([binary, "--bind", "127.0.0.1", "--port", "0", "--no-stats",
                                 "--steps-per-unit", "400,400,400,400", "--stock-size", "30,10,4",
@@ -56,8 +60,12 @@ with tempfile.TemporaryFile(mode="w+") as log:
         text = log.read()
         final = text.split("Stopped. Final statistics:")[-1]
         assert "accepted: 1000" in final and "TX: 1000" in final and "invalid: 0" in final, text
-        assert "Packet-ID gaps: 0" in final and "send errors: 0" in final, text
-        assert "Material removal: OFF | queue 0" in final and "Sweeps processed: 1001" in final, text
+        for counter in ["Packet-ID gaps", "send errors", "Length errors", "checksum errors", "timing errors", "position overflows"]:
+            assert f"{counter}: 0" in final, text
+        assert "Material removal: OFF | queue 0" in final, text
+        sweeps = int(re.search(r"Sweeps processed: (\d+)", final)[1])
+        assert 1 < sweeps < 250, text
+        assert "Motion events received: 1000" in final, text
         assert "Dirty mesh chunks: 0" in final and "Worker lag: 0.000" in final, text
         assert "X  4000 steps  10.0000 mm" in final and text.count("Error:") == 3, text
         # Independent capsule cross-section centre count; z = [0,2] gives 20 layers.
@@ -68,7 +76,7 @@ with tempfile.TemporaryFile(mode="w+") as log:
         ordered = sorted(latencies)
         maximum = int(re.search(r"queue 0 / max (\d+)", final)[1])
         print(f"PASS: {'graphics' if render else 'headless'} material UDP/CLI: 1000 packets, "
-              f"1001 sweeps, {removed} removed voxels, max queue {maximum}; "
+              f"{sweeps} sweeps, {removed} removed voxels, max queue {maximum}; "
               f"RTT median={ordered[500]*1000:.3f} p99={ordered[990]*1000:.3f} "
               f"max={max(latencies)*1000:.3f} ms (diagnostic, not realtime guarantee)")
     finally:

@@ -14,13 +14,23 @@ struct MaterialMeshes {
     std::uint64_t generation{}, revision{};
     ToolDefinition tool;
     MeshDirectory chunks; // Complete directory: skipped publications cannot lose updates.
+    std::uint64_t material_version{};
 };
+struct MaterialWorkerConfig {
+    unsigned material_workers{1};
+    unsigned mesh_workers{}; // 0: automatic, reserve two logical CPUs, cap at four.
+};
+MaterialWorkerConfig resolve_material_workers(MaterialWorkerConfig config);
 struct MaterialStatus {
+    unsigned material_workers{1}, mesh_workers{1}, mesh_parallel_max{};
     RemovalStats removal;
     ToolDefinition tool;
     bool enabled{};
     std::uint64_t queue_depth{}, max_queue_depth{}, events_processed{}, dirty_chunks{}, mesh_rebuilds{}, generation{};
-    double worker_ms{}, mesh_ms{}, lag_ms{}, removed_volume_mm3{};
+    std::uint64_t motion_received{}, motion_coalesced{}, mesh_queue_depth{}, mesh_queue_max{};
+    std::uint64_t stale_mesh_jobs{};
+    double snapshot_ms{}, coalescing_ms{};
+    double worker_ms{}, mesh_ms{}, publication_ms{}, lag_ms{}, removed_volume_mm3{};
     std::string error;
 };
 enum class MaterialEventKind { Motion, Enable, Disable, Tool, Reset, Workpiece, Capture };
@@ -34,7 +44,7 @@ struct MaterialEvent {
 };
 class MaterialWorker {
 public:
-    explicit MaterialWorker(std::shared_ptr<const WorkpieceSnapshot> raw);
+    explicit MaterialWorker(std::shared_ptr<const WorkpieceSnapshot> raw, MaterialWorkerConfig config = {});
     ~MaterialWorker();
     // Exactly one producer: Simulation's authoritative UDP thread.
     void enqueue(MaterialEvent event) { queue_.push(std::move(event)); }

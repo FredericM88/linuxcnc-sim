@@ -9,6 +9,18 @@ Schrittänderungen. Phase 1 wurde vom Benutzer mit echtem LinuxCNC erfolgreich
 getestet: 1-ms-Servozeit, 400 Schritte/mm, Geraden und G2/G3-Kreise, über 600.000
 Pakete ohne gemeldete Fehler oder ID-Lücken.
 
+Der erste reale Phase-5-Lauf entfernte geometrisch korrekt **296560 Voxel**,
+zeigte aber einen großen Performance-Rückstand. Die Optimierung fasst exakt
+kollineare Motion zusammen, invalidiert chunkweise und mesht unveränderliche
+Snapshots parallel. Der UDP-Pfad bleibt unabhängig. Die reale Abnahme muss mit
+demselben LinuxCNC-Test wiederholt werden: **NOT YET PASSED**.
+
+`--material-workers 1` behält einen autoritativen Material-Thread.
+`--mesh-workers 0` (Standard) wählt bis zu vier Mesh-Threads und lässt rechnerisch
+zwei logische CPUs frei; explizit sind 1..32 möglich. Andere Material-Threadzahlen
+werden derzeit abgewiesen. Messwerte, Snapshot-Semantik und Grenzen stehen in
+[Phase-5-Design](docs/phase5-design.md) und [Testprotokoll](docs/phase5-test.md).
+
 ## Projektstand
 
 | Phase | Status |
@@ -18,7 +30,7 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | automatisiert getestet; OpenGL-/G53-Pfad im Rahmen der realen 4A.1-Abnahme bestätigt |
 | Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | automatisiert getestet und am 2026-09-27 real/interaktiv mit LinuxCNC 2.9.10 erfolgreich abgenommen |
-| Phase 5: kontinuierlicher Voxel-Materialabtrag | implementiert und automatisiert getestet; reale LinuxCNC-Abnahme: **NOT YET PERFORMED** |
+| Phase 5: kontinuierlicher Voxel-Materialabtrag | implementiert und automatisiert getestet; reale LinuxCNC-Abnahme: **NOT YET PASSED** |
 
 Die reale Phase-4A.1-Abnahme wurde vom Benutzer bestätigt: Runtime-Geometrie,
 Origins, Platzierung und G53-Werkzeugposition stimmten mit LinuxCNC 2.9.10
@@ -128,7 +140,8 @@ Werkstückkonfiguration wieder her.
 Eine verlustfreie geordnete FIFO übergibt integrierte XYZ-Bewegungen und
 Steuerereignisse an einen separaten Material-Worker. Dieser prüft analytische
 kontinuierliche Zylinder-Sweeps gegen Voxelzentren, entfernt Material dauerhaft
-und baut nur geänderte Chunk-/Nachbarmeshes neu. OpenGL erhält unveränderliche,
+und übergibt geänderte Chunks samt Nachbarn als Snapshot an den Mesh-Pool.
+OpenGL erhält unveränderliche,
 konsistente Mesh-Stände; Kamera und Werkzeugposition bleiben unabhängig bedienbar.
 UDP wartet weder auf Materialberechnung noch Meshing oder OpenGL.
 

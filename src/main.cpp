@@ -35,6 +35,7 @@ struct Options {
     bool verbose = false;
     bool render = false;
     cnc::SceneConfig scene;
+    cnc::MaterialWorkerConfig workers;
     std::vector<cnc::IOCommand> initial_io;
 };
 
@@ -92,6 +93,8 @@ void usage() {
         "  --stats-ms N                Statistics interval >= 100 ms\n"
         "  --no-stats                  Headless; commands and final statistics\n"
         "  --verbose                   Show latest packet counters every refresh\n"
+        "  --material-workers N        Material owner count: must be 1\n"
+        "  --mesh-workers N            0=auto (up to 4, reserve 2 CPUs); explicit 1..32\n"
         "  --render                    Open optional OpenGL 3.3 window\n"
         "  --voxel-size MM             Positive voxel edge; default 0.1\n"
         "  --stock-size X,Y,Z          Stock dimensions in mm; default 50,50,10\n"
@@ -137,6 +140,8 @@ Options parse(int argc, char** argv) {
         } else if (flag == "--stats") { options.stats_ms = 1000; options.interactive = false; }
         else if (flag == "--no-stats") { options.stats_ms = 0; options.interactive = false; }
         else if (flag == "--verbose") options.verbose = true;
+        else if (flag == "--material-workers") options.workers.material_workers = number(value());
+        else if (flag == "--mesh-workers") options.workers.mesh_workers = number(value());
         else if (flag == "--render") options.render = true;
         else if (flag == "--voxel-size") options.scene.volume.voxel_size_mm = real_number(value());
         else if (flag == "--stock-size") options.scene.stock_size_mm = triple(value());
@@ -161,6 +166,7 @@ Options parse(int argc, char** argv) {
         for (std::size_t axis = 0; axis < 3; ++axis)
             if (options.units[axis] != "mm") throw std::invalid_argument("--render requires XYZ --units mm,mm,mm (scales in steps/mm)");
     }
+    options.workers=cnc::resolve_material_workers(options.workers);
     return options;
 }
 
@@ -337,7 +343,7 @@ int main(int argc, char** argv) {
         ignore.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &ignore, nullptr);
         cnc::Simulation simulation(options.bind_address, options.port, options.scales, options.initial_io,
-                                   options.scene);
+                                   options.scene, options.workers);
 #ifdef CNC_SIM_RENDER
         if (options.render) {
             auto rendered = simulation.workpiece_snapshot();

@@ -5,6 +5,7 @@
 namespace cnc {
 struct RemovalStats {
     std::uint64_t sweeps{}, chunks_tested{}, chunks_changed{}, voxels_tested{}, voxels_removed{};
+    double broad_ms{}, narrow_ms{}, mutation_ms{}, invalidation_ms{};
 };
 // Single material-worker owner; no graphics, synchronization or machine state.
 class MaterialRemoval {
@@ -16,7 +17,6 @@ public:
     DirtyChunks& dirty() { return dirty_; }
     void dirty_all();
 private:
-    void invalidate(VoxelCoord p);
     SparseVoxelVolume volume_;
     RemovalStats stats_;
     DirtyChunks dirty_;

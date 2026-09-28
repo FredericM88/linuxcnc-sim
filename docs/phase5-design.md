@@ -1,35 +1,42 @@
 # Phase 5 design
 
-## Implementation plan (before code changes)
+## Performance review of 34fd135
 
-Baseline inspected: 1a2133a, tracked tree clean; the supplied Phase-5 specification
-was the sole untracked input and will be retained in the implementation commit.
-No AGENTS.md applies. Existing Simulation owns the authoritative UDP integration
-thread; WorkpieceSnapshot publishes immutable raw stock/configuration revisions;
-SurfaceMesher already samples six face neighbours across chunk boundaries.
-DirtyChunks exists but has no material mutation/version implementation yet.
-Renderer currently builds all CPU meshes itself on workpiece replacement.
+The clean baseline was `34fd1359701b58b02fac77110650945e06e31a05`.
+No AGENTS.md applies. The real run proved geometric correctness (296560 removed
+voxels), but **real Phase-5 acceptance remains NOT YET PASSED** because of backlog.
+The supplied observations were checked against all material, volume, mesher,
+renderer, transform, tool, simulation, queue, CLI and test code before editing.
 
-1. Extend SparseVoxelVolume with binary erasure, occupancy counts and versions;
-   retain implicit stock, 32 cubed chunks, Empty/Solid/Mixed and reserved values.
-2. Extend ToolDefinition with validated flat-end cutting geometry and an analytic
-   continuous inclusion predicate. Reuse WorkpieceTransform for broad/narrow phase.
-3. Add a single-owner material engine and a lossless SPSC event queue. The UDP
-   producer publishes accepted actual motion and ordered tool/enable/reset/stock
-   events. The consumer alone mutates material and builds dirty meshes. No material
-   or renderer lock is acquired by UDP. Allocation exhaustion is a visible fatal
-   error, never silent overflow/drop or continued apparently valid simulation.
-4. Publish immutable full mesh directories with shared per-chunk meshes: renderer
-   can skip snapshots safely, compare chunk identities and upload only changes.
-   Workpiece raw/config snapshots retain existing semantics; material is separate
-   mutable state owned by the worker, never by OpenGL.
-5. Integrate commands and diagnostics; reset uses current raw configuration and
-   an ordered event boundary. Material starts OFF. No inference from G0/G1.
-6. Add deterministic geometry, mutation, meshing, queue, UDP, CLI and renderer
-   tests; run full graphics/headless suites and integrity checks; document results
-   and manual acceptance (NOT YET PERFORMED); review and create one local commit.
+Confirmed: one material jthread; serial candidate/voxel traversal; an event for
+every accepted XYZ position change; per-voxel dirty/halo marking; both removal
+and SurfaceMesher on that same worker; complete dirty batches blocking further
+motion consumption. MotionQueue is already lossless and independent of worker
+locks. It is retained unchanged, as are the UDP loop, wire protocol and vendor code.
 
-Detailed mathematics, queue semantics and measured validation follow below.
+Qualifications: there is no material event for unchanged XYZ or A-only packets.
+4000 is an estimate for constant F300 at 1 ms (5 mm/s, 0.005 mm/update), not a
+protocol invariant: step quantization and acceleration determine actual events.
+DirtyChunks already deduplicated its set, but repeated insertion/hash/coordinate
+work remained. Rendering already consumed immutable complete mesh directories;
+the problem was their serial production, not GPU ownership. A halo mesh may need
+an update even when that chunk's own material version has not changed.
+
+The staged plan, followed with tests and measurements at each stage:
+
+1. Extend existing diagnostics; reproduce the unchanged baseline with the same
+   compiler and workload, preserving a baseline executable locally.
+2. A: exact, conservative coalescing on the consumer; retain every turn/barrier.
+3. B: one own/face-neighbour dirty mark per changed candidate chunk.
+4. C: detach meshing through immutable volume snapshots, initially one mesh thread.
+5. D: bounded configurable mesh pool; validate generation and all halo versions.
+6. E: only if measurements justify chunk-parallel material mutation. Not implemented:
+   the measured material cost after A-D fits comfortably within the four-second
+   reference motion. Concurrent writes would require partitioned chunk ownership,
+   safe map insertion and deterministic reduction of volume versions, counts and
+   dirty sets. There is no evidence that this added complexity is needed yet.
+
+See [phase5-test.md](phase5-test.md) for stage measurements and limits.
 
 ## Ownership and data flow
 
@@ -39,10 +46,12 @@ Original UDP -> StepperNinjaProtocol::accept -> int64 MachineState
                   v
              SPSC MotionQueue<MaterialEvent>
                   v
-             MaterialWorker (one thread, headless too)
-                  -> MaterialRemoval -> SparseVoxelVolume
-                  -> DirtyChunks -> SurfaceMesher
-                  -> immutable MaterialMeshes directory
+             exact coalescer (20 ms target collection window)
+                  v
+             MaterialWorker (one authoritative owner, headless too)
+                  -> MaterialRemoval -> SparseVoxelVolume -> DirtyChunks
+                  -> immutable volume copy + chunk jobs -> mesh thread pool
+                  <- version-checked results -> complete immutable MaterialMeshes
                   v
              main/context thread -> changed GPU chunks -> OpenGL
 ```
@@ -75,7 +84,7 @@ unchanged in purpose. No vendor or wire implementation changes are needed.
 publication. There is exactly one producer (UDP thread, including console requests
 forwarded through its mailbox) and one consumer (material worker). Nodes are
 reclaimed iteratively by the consumer. No shared material lock, capacity wait,
-overwrite, eviction, path simplification or endpoint-only merging is used.
+overwrite, eviction or approximate path simplification is used.
 XYZ-unchanged packets and A-only changes do not enqueue sweeps: repeated identical
 occupancy contributes nothing. Enabling and changing tools explicitly stamp the
 current authoritative position, covering the zero-length case.
@@ -87,20 +96,52 @@ travel. Command replies say **queued**: they acknowledge the packet boundary,
 not completion of expensive worker processing. `material show` shows the processed
 state; wait for ON/OFF and a drained queue when performing interactive acceptance.
 
-At most 256 events, or approximately 20 ms of event work, are handled per batch;
-a single sweep is indivisible and may exceed that budget. Each pass then rebuilds
-at most eight dirty meshes. Further motion consumption pauses until all dirty
-meshes from that batch are complete, publishing diagnostics between slices.
-This guarantees coherent progressive render checkpoints during sustained cuts;
-only the material consumer pauses, never UDP. Diagnostic publication is approximately 20 ms; the
-worker sleeps 1 ms only when idle. Shutdown first stops/joins the producer, then
-drains every pending event and dirty mesh before joining the material worker.
-Shutdown can take longer if substantial material work remains.
+The consumer drains up to 65536 input events or approximately 20 ms per pass.
+An accumulated motion is flushed on a nonmergeable segment, any control/capture
+barrier, shutdown, or after a 20 ms collection window. The window is measured from
+its first dequeue; it does not restart when more segments arrive. Deadline checks
+run once per consumer pass, so this is a target, not a strict latency bound. A sweep is still
+indivisible and may exceed that budget. This also coalesces a live 1 kHz stream
+instead of only an already accumulated backlog. At shutdown every segment is
+flushed. There is no producer-side timer or extra producer synchronization.
+
+Mesh completion is polled without waiting. During mesh jobs, the owner continues
+motion consumption and records new dirty chunks. It sleeps 1 ms if no input was
+consumed, avoiding a busy wait. Diagnostic publication is approximately 20 ms.
+Shutdown stops/joins UDP first, then drains coalescing, material, dirty and mesh
+work before joining the material owner and mesh pool. Allocation failures or mesh
+exceptions produce the existing fatal/incomplete state, not silent lost geometry.
+
+### Exact coalescing rule
+
+Only consecutive Motion events with exactly equal numeric connection coordinates
+(`previous.to == next.from`) can merge. Every other event kind is a barrier,
+including Capture, repeated Enable, Tool, Disable, Reset and Workpiece.
+For A -> B -> C, B must lie coordinate-wise between A and C, preventing reversal.
+All coordinates must be finite and within the existing supported range.
+
+Axis-aligned motion is proven directly by constant coordinates and monotonicity.
+Zero-length segments add no geometry and can join a valid connected run.
+For general XYZ, subtraction uses an error-free residual check: both B-A and C-B
+must be exactly representable. All three cross-product equalities must hold as
+**exact products**, checking both rounded product and FMA residual. Nonzero
+operands outside [2^-400, 2^400] are rejected to exclude product/residual underflow.
+This relies on IEEE binary64, normal rounding and the project's non-fast-math build.
+There is no angle/distance epsilon. Inexact differences or uncertain cases retain
+the original segments. Thus even mathematically intended diagonal decimal samples
+may remain separate if their represented coordinates are not proven collinear.
+Exactly representable diagonal XYZ lines (including negative directions) merge.
+
+The union of translated fixed-axis cylinders along connected, collinear,
+equidirectional segments equals the cylinder sweep along the combined segment.
+The existing spatial sweep tolerance and inclusion predicate are unchanged.
+Corners, reversals, discontinuities and arc-like polylines remain complete.
+No every-Nth-packet filtering, curve fitting or chord approximation is performed.
 
 Current/max FIFO depth includes control and diagnostic events, but excludes the
 currently executing event. `OVERLOAD (lossless backlog)` appears at depth >=1000
 or measured dequeue lag >=1000 ms. Ordinary overload grows RAM usage and delays
-material/graphics; it never drops or merges required geometry. There is one small
+material/graphics; it never drops required geometry; merging preserves the swept union. There is one small
 allocation per queued event. The allocator and OS scheduler do not provide a
 hard real-time guarantee; the design guarantees independence from worker locks
 and expensive material/mesh work, not a worst-case userspace allocation latency.
@@ -195,21 +236,67 @@ allocate nothing. Occupancy counts collapse fully removed chunks to Empty and
 release their arrays. Global and per-chunk material versions increment per actual
 voxel change, never for an identical repeat cut.
 
-DirtyChunks deduplicates changed chunks. A removed cell on local index 0 or 31
-also invalidates the in-stock face neighbour on that side. SurfaceMesher samples
-only the six face neighbours; no edge/corner halo is required for this mesher.
-A neighbour mesh can change while its material version remains unchanged.
-The boundary test compares total mesh area against exhaustive exposed voxel faces
-and verifies newly exposed faces in an unchanged adjacent solid chunk.
+Dirty invalidation collects a six-bit boundary mask from the removed voxels in
+each candidate chunk. The own chunk is marked once and each touched in-stock face
+neighbour once. The six-face halo semantics are unchanged; no edge/corner halo is
+needed by SurfaceMesher. The existing face-area and X/Y/Z boundary tests remain.
 
-CPU meshes are immutable shared per-chunk values in a complete MeshDirectory.
-Changed mesh identity, snapshot revision and generation identify updates. The
-worker publishes a mesh directory **only when every currently dirty chunk has
-been rebuilt**, so a snapshot never mixes old neighbour faces with new cut faces.
-Partial internal rebuilds are not rendered. The previous coherent image remains
-visible during heavier work; a large batch can delay the next visual update. New motion is consumed only after
-this coherent mesh checkpoint, so sustained motion cannot starve publication.
-Skipping renderer publications is safe because each directory is complete.
+### Snapshot, versions and publication
+
+A consistent material state is the owner's completed sweep/control-event prefix.
+At scheduling, it deep-copies the sparse material volume once for an entire dirty
+batch. Mesh threads read only this immutable copy, including implicit stock and
+all neighbour samples. They never access mutable engine data. Snapshot time is
+measured separately; the copy pauses only the material owner, never UDP.
+
+Each job identifies a generation, chunk and snapshot versions of the chunk and
+its six face neighbours. Reset/workpiece replacement advances generation.
+When the batch completes, the owner checks generation and all seven versions.
+An older job cannot replace a mesh for a changed chunk or halo: it is rejected
+and the current-generation chunk is marked dirty again. A job for an abandoned
+generation is simply discarded (the replacement generation already dirtied all
+chunks). Unaffected jobs remain valid even when unrelated material has changed.
+
+Only the material owner writes the staged mesh directory. A dirty chunk is fully
+processed once a result matching its latest material/halo state is accepted and
+no later invalidation remains. Updates arriving during a job accumulate in the
+existing deduplicated DirtyChunks set, coalescing obsolete mesh work. A conservative
+extra rebuild can occur when a valid result overlaps a newly marked dirty entry.
+
+A complete directory is published only with no active batch and no dirty entries.
+Its `material_version` is the current global volume version, and its generation
+and monotonic publication revision prevent ambiguity across reset. Every mesh in
+that directory matches this committed state, including both sides of boundaries.
+Later mutation can make the **already visible** snapshot historical; it remains
+immutable and coherent until replacement. No new stale directory is published.
+Renderer can skip directories safely because each is complete; shared chunk mesh
+identities retain the existing selective GPU-upload behavior.
+
+### Thread safety and configuration
+
+`--material-workers 1` is the sole supported setting; other values fail explicitly.
+`--mesh-workers N` accepts 1..32; 0 (default) selects
+`min(4, hardware_concurrency > 2 ? hardware_concurrency - 2 : 1)`.
+This reserves two logical CPUs in the count when available, not via CPU affinity.
+The UDP and material owner threads are additional to the mesh pool.
+
+The mesh pool has one batch, a short job-dispatch mutex/condition variable, and
+preallocated independent result slots. Each slot has exactly one writer.
+An acquire/release completion counter makes all completed slots visible to the
+material owner before it reads them. Worker exceptions travel in result slots.
+Pool initialization failure also follows the material failure path; partial thread
+creation and shutdown join all created threads. No material map, voxel array,
+occupied/version/removal counter or DirtyChunks object has concurrent writers.
+The existing publication mutex protects only status and immutable directory pointer
+exchange with console/renderer. None of these locks is acquired by UDP.
+
+At most one mesh batch plus a deduplicated next dirty set is scheduled. Unlike
+motion, obsolete mesh work may be discarded. Snapshot memory is proportional to
+**stored** sparse voxels, not the implicit raw box; deep copies can become expensive
+for large, extensively cut volumes. Copy-on-write or chunk-plus-halo snapshots are
+a possible next step if snapshot measurements justify it. Sustained workloads
+faster than the mesh pool can still delay complete coherent publication; no hard
+frame-rate or latency guarantee is made. Material keeps progressing in that case.
 
 Renderer uploads only meshes whose shared identities changed. An empty mesh
 removes old GPU geometry. Reset/configuration changes replace the generation and
@@ -244,17 +331,27 @@ motion cuts again if ON; toggling OFF then ON stamps a stationary tool again.
 `workpiece` edits still create new raw stock, and `workpiece reset` still selects
 the original default configuration. These are intentionally distinct commands.
 
-`material show`, the compact dashboard and periodic/final statistics expose:
+`material show`, periodic/final statistics and the existing compact dashboard
+extend the same MaterialStatus diagnostics. Detailed output includes motion events
+received by the consumer, events after coalescing, sweeps, chunks/voxels tested and
+changed/removed, queue current/max, mesh queue current/max, rebuilds, discarded stale
+jobs, material/mesh worker counts and observed simultaneous mesh-build peak.
 
-- Processed ON/OFF and tool diameter/cutting length.
-- Sweeps, current/maximum queue depth, overload indication, event count/generation.
-- Chunks tested/changed, occupied voxel centres tested, voxels actually removed.
-- `removed_volume_mm3 = removed_voxels*h^3`, pending dirty chunks and mesh rebuilds.
-- Cumulative event processing and meshing time; last event's dequeue lag in ms
-  (zero once idle; not an end-to-end render latency measurement).
-- Explicit fatal material error if processing cannot remain complete.
+Timers distinguish broad AABB/clipping, narrow sampling/inclusion/hit collection,
+voxel mutations, dirty-mask/marking, event processing, coalescing/dequeue overhead,
+sparse snapshot copies, mesh builds and publication. Clocks are read per chunk or
+batch, never per voxel or additionally on UDP. Candidate chunk loop bookkeeping
+is part of total processing, not all attributed to broad-phase time. Mesh time is
+the **sum of elapsed job durations**, which can exceed wall time with parallelism;
+it is not an OS CPU-time measurement. Publication measures CPU directory/pointer
+work, not GPU uploads or screen latency. Status can trail the newest timing sample
+by one publication interval.
 
-Removal counts are per material generation; events, mesh rebuilds, maximum depth
-and processing/mesh times are process-lifetime totals. A tested/changed chunk can
-be counted once in each sweep. `queue 0` excludes an in-flight event; for a complete
-interactive checkpoint also wait for stable counters and zero dirty chunks.
+Removal counters/timers are per generation; event counts, other timers, rebuilds
+and high-water marks are lifetime totals. The mesh queue counts queued/running jobs
+plus pending dirty entries (these may name the same chunk). Dirty count additionally
+includes a completed batch until it is collected and validated. Motion FIFO depth
+excludes its executing/coalescing event; queue 0 alone is not a capture barrier.
+Worker lag is the age of the last dequeued event or pending coalesced event, zero
+when fully idle, not a display latency measurement. For an exact material checkpoint
+use the Capture barrier; shutdown drains material and meshes completely.

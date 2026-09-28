@@ -1,10 +1,76 @@
 # Phase 5 validation and LinuxCNC acceptance
 
-Real LinuxCNC Phase-5 acceptance: **NOT YET PERFORMED**.
-The automated tests below were run locally on 2026-09-28. They use original
-Stepper-Ninja datagrams and OpenGL but do not replace an interactive LinuxCNC run.
+Real LinuxCNC Phase-5 acceptance: **NOT YET PASSED**.
+The first real run proved geometric correctness and lossless eventual processing,
+but failed the desired progressive performance. Automated optimization checks
+below do not grant real acceptance. The same test must be repeated manually.
 
-## Reproduce automated validation
+## First real run (operator-supplied baseline, before optimization)
+
+Workpiece 30 x 20 x 10 mm, position (15,10,-10), origin center/center/max,
+voxel 0.10 mm: machine bounds X 0..30, Y 0..20, Z -20..-10.
+Tool flat-end 6 x 20 mm. Start (5,10,-5), plunge Z-12 F120, X25 F300.
+
+| Counter | After plunge | After horizontal groove |
+|---|---:|---:|
+| queue max | 206 | 3235 |
+| sweeps | 2773 | 6820 |
+| events processed | not supplied | 40584 |
+| chunks tested / changed | 12852 / 140 | 82884 / 14314 |
+| voxels tested | 9653732 | 70125744 |
+| voxels removed | 56560 | 296560 |
+| removed mm3 | 56.560 | 296.560 |
+| mesh rebuilds | not supplied | 6118 |
+| material processing ms | 932.009 | 9337.319 |
+| meshing ms | 2425.898 | 14954.038 |
+
+After final drain: motion queue=0, dirty meshes=0, lag=0. During X motion the
+visible groove trailed badly and caught up after the tool stopped. Nevertheless
+RX=accepted=TX=1203003; invalid, length, checksum, timing, send errors, position
+overflows and packet-ID gaps were all zero. Thus the issue was downstream work,
+not missing motion or a reason to block UDP.
+
+The discrete fingerprint is **296560 voxels / 296.560 mm3**, analytic comparison
+**296.548668 mm3**. The automated quantitative test now explicitly asserts the
+exact fingerprint in addition to its existing voxel-derived analytic bound.
+
+## Automated validation (2026-09-28)
+
+| Validation | Result |
+|---|---|
+| Graphics Release, complete suite | 41/41 passed, no skips |
+| Headless Release, complete suite | 38/38 passed, no skips |
+| ASan/UBSan Debug, complete headless suite, leak detection | 38/38 passed, no reports |
+| ThreadSanitizer Debug, material/volume/workpiece selection | 21/21 passed, no reports |
+| Vendor integrity | nine pinned SHA-256 files match originals |
+| Protocol, original HAL, UDP, namespace tests | passed; namespace test not skipped |
+| Original stepper-ninja checkout | clean; no protocol/vendor edits |
+| Real LinuxCNC acceptance after optimization | **NOT YET PASSED** |
+
+GCC 14.2.0 / C++20, Linux, 14 available logical CPUs; automatic mesh count 4.
+Graphics tests used the available desktop (OpenGL 4.6 Core, Mesa 25.0.7/radeonsi,
+AMD Radeon Graphics). Headless binary links no OpenGL/GLFW.
+The graphics-suite UDP material runs reported 47 sweeps for 1000 motion events:
+headless queue max 5, RTT median/p99/max 0.046/0.123/1.331 ms; graphics queue max 3,
+RTT 0.062/0.158/2.924 ms. These are diagnostics, not real-time guarantees.
+The original UDP/CLI material tests (with and without graphics) still require
+1000 received/accepted/replied packets, 43160 removed voxels and zero invalid,
+length/checksum/timing/send/overflow/gap errors. Their old **1001 sweeps** assertion
+was intentionally replaced by exactly **1000 motion events**, fewer than 250
+sweeps, and the unchanged exact occupancy assertion: fewer sweeps are the feature,
+not a relaxed geometry or protocol tolerance. No test was disabled.
+
+New coverage: all 1/20/200/4000 variants compare every final voxel with the coarse
+reference; exact XYZ diagonals and negative direction; static events; reversals;
+90-degree corners; arc-like polylines; chunk boundaries; one-ULP
+near-collinearity and equal rounded products with different exact residuals.
+Concurrency tests cover 1/2/4 mesh threads, repeated reset and workpiece generations,
+Capture barriers, simultaneous status/mesh readers, snapshot independence while
+material mutates, and exact final mesh indices/positions/normals versus serial
+meshing of the final volume. Existing X/Y/Z halo-only invalidation and exhaustive
+exposed-face-area checks remain active.
+
+## Reproduce builds, tests and sanitizers
 
 ```bash
 cd ~/dev/linuxcnc-sim
@@ -16,95 +82,185 @@ ctest --test-dir build --output-on-failure
 cmake -S . -B build-headless -DCMAKE_BUILD_TYPE=Release \
   -DCNC_SIM_RENDER=OFF -DCNC_SIM_RENDER_TESTS=OFF
 cmake --build build-headless -j4
-env -u DISPLAY -u WAYLAND_DISPLAY \
-  ctest --test-dir build-headless --output-on-failure
+env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-failure
 python3 tests/vendor_integrity.py
 ldd build-headless/cnc-sim
-```
 
-Graphics tests use the available desktop, OpenGL 4.6 Core, Mesa 25.0.7/radeonsi
-on AMD Radeon Graphics. GCC 14.2.0, C++20. The headless binary links neither
-OpenGL nor GLFW. Both suites include the existing unprivileged network-namespace
-test; it ran successfully, without skipping or changing the host network.
-
-Additional ASan/UBSan Debug validation (material and related volume/snapshot tests):
-
-```bash
-cmake -S . -B build-sanitize -DCNC_SIM_RENDER=OFF -DCMAKE_BUILD_TYPE=Debug \
+cmake -S . -B build-sanitize -DCMAKE_BUILD_TYPE=Debug \
+  -DCNC_SIM_RENDER=OFF -DCNC_SIM_RENDER_TESTS=OFF \
   -DCMAKE_CXX_FLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie' \
   -DCMAKE_C_FLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined -no-pie'
 cmake --build build-sanitize -j4
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
-  ctest --test-dir build-sanitize \
+  ctest --test-dir build-sanitize --output-on-failure
+
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DCNC_SIM_RENDER=OFF \
+  -DCMAKE_CXX_FLAGS='-O1 -g -fsanitize=thread -fno-omit-frame-pointer -fno-pie' \
+  -DCMAKE_C_FLAGS='-O1 -g -fsanitize=thread -fno-omit-frame-pointer -fno-pie' \
+  -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread -no-pie'
+cmake --build build-tsan -j4
+TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build-tsan \
   -R 'material-|phase4a-|workpiece-(geometry|transactions|runtime)' --output-on-failure
 ```
 
-## Results
+## Measurements and benchmark interpretation
 
-| Validation | Result |
-|---|---|
-| Graphics Release, full CTest suite | 35/35 passed, no skips |
-| Headless Release, full CTest suite | 32/32 passed, no skips |
-| ASan + UBSan + leak detection, selected Debug suite | 15/15 passed, no sanitizer reports |
-| Original protocol/HAL tests | passed in both full suites |
-| Vendor integrity | all nine pinned SHA-256 files unchanged and equal to originals |
-| Original `stepper-ninja` checkout | clean; no vendor or protocol source edits |
-| Real LinuxCNC Phase-5 acceptance | **NOT YET PERFORMED** |
+Benchmark A uses the same stock, tool, plunge and horizontal path as above.
+It sends one plunge segment, N horizontal segments, Enable and a final Capture.
+Thus N+1 motion events and N+3 total events are processed. Capture copies the
+final volume within wall time; exhaustive reference comparison runs outside timing.
+All measured variants remove **296560 voxels** and compare equal voxel-for-voxel.
+One segment includes both endpoint cylinders; no step/sample dropping is involved.
+The synthetic benchmark is not a LinuxCNC trajectory replay: its plunge is one
+segment and its optional horizontal pacing is a nominal 1 kHz stream.
 
-New deterministic coverage:
+Baseline executable was rebuilt from unchanged 34fd135 in Release using the same
+compiler. The benchmark can also be built against its original headers/library
+with `CNC_BENCH_BASELINE`. Final comparisons ran sequentially, after builds/tests
+finished. Times are single-run diagnostics, not statistical latency guarantees.
+Workload/geometry are deterministic; concurrent queue maxima, collection-window
+boundaries, stale job counts and timings depend on scheduling. Offline coalescer
+tests additionally assert exact sweep counts independent of scheduling.
 
-- Static stamp, vertical plunge, Solid -> Mixed, Empty compaction, untouched cells,
-  partial boundary initialization, per-chunk/global versions and idempotent recuts.
-- Horizontal, vertical, simultaneous XYZ, reversed, tiny and zero-length motion.
-  One long sweep equals 127 shorter collinear sweeps exactly. Seeded random
-  diagonals also match 19 subdivisions. Analytic XYZ tests check the coupling of
-  Z-time clipping and XY projection, not merely a 2D capsule.
-- A legacy rotated stock broad phase agrees with exhaustive voxel-centre inclusion.
-  Finite long-segment inclusion and out-of-stock non-removal are checked.
-- X/Y/Z chunk-boundary dirty propagation; a cut changes the visible face of an
-  otherwise unchanged Solid neighbour. Meshed area matches exhaustive exposed
-  voxel-face area; continuous grooves cross the 32-cell boundary without gaps.
-- 200000 numbered FIFO events are consumed in order. A deliberately delayed
-  consumer begins with 10000 queued events; no events are overwritten or lost.
-  The worker test processes a bent path with 2000 segments, then queued capture,
-  reset, tool change and OFF movement, comparing exact final occupancy.
-- Runtime test sends original UDP XYZ packets and compares the resulting material
-  with the expected path. ON stamps only the current pose after disabled travel.
-  Reset preserves configuration/machine pose, immutable snapshots remain unchanged,
-  and invalid commands cannot change tool/material configuration.
-- Failure test injects an unsupported material pose, verifies explicit incomplete
-  state and failed pending diagnostic capture, then joins cleanly.
-- Both headless and graphics black-box tests send 1000 original packets at nominal
-  1 kHz while cutting, check 1001 sweeps including the enable stamp, exactly
-  43160 removed voxels, and zero invalid/send/gap errors. Shutdown drains the
-  queue and dirty meshes. This is an automated UDP test, not LinuxCNC acceptance.
-- Framebuffer test detects a visible cut, verifies repeated rendering preserves
-  it and checks reset restores the original pixels. Existing camera, tool movement,
-  workpiece reconfiguration and concurrent UDP/recorder graphics tests remain.
+### Staged checkpoints
 
-Quantitative 0.10-mm test: stock 30 x 20 x 10 mm, tool diameter 6 mm, X centre
-travel 20 mm, depth 2 mm. Counts were **6000000 -> 5703440** material voxels,
-**296560 removed**, equivalent to **296.560 mm3**. The analytic capsule-prism
-volume `(20*6 + pi*3^2)*2` is **296.548668 mm3**. The accepted bound is
-**8.354 mm3**, derived from a 2D half-cell diagonal boundary strip and exact
-grid-aligned depth. Measured agreement does not imply CAD accuracy.
+| Stage | 4000-segment sweeps | Voxel tests | Material ms | Mesh ms | Wall ms |
+|---|---:|---:|---:|---:|---:|
+| Unchanged initial baseline | 4002 | 59715244 | 7861.937 | 9342.840 | 17245.750 |
+| Instrumentation only | 4002 | 59715244 | 8782.922 | 10141.325 | 18968.760 |
+| A: exact coalescing | 4 | 380230 | 42.507 | 400.634 | 457.451 |
+| B: chunk invalidation | 3 | 365288 | 32.587 | 374.316 | 420.056 |
+| C: detached meshing, one mesh thread | 3 | 365288 | 32.191 | 385.686 | 432.048 |
+| D: four mesh threads | 3 | 365288 | 32.124 | 379.876 | 142.224 |
 
-One Graphics Release suite run measured:
+Instrumentation-only and A-D targeted suites all passed after their respective
+stages (12 tests initially, 13 after coalescing). Instrumentation collects chunk
+hits before mutation to separate timings, adding temporary storage/work; measured
+instrumentation-only cost was visible. There are no per-voxel clock calls.
+B removes repeated dirty set work. C does not inherently reduce isolated burst
+wall time with one mesh thread; its purpose is ongoing material progress while
+meshing runs. D reduces mesh wall time through actual parallel jobs. Mesh ms after
+C is the sum of job elapsed times, not a single critical-path or CPU measurement.
 
-| 1000-exchange case | Median RTT | p99 RTT | Max RTT |
+### Final same-machine burst comparisons
+
+| N | Mode | Motion / coalesced | Sweeps | Voxels tested | Chunks tested / changed | Queue max | Rebuilds | Material ms | Mesh ms | Wall ms |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 34fd135 | 2 / 2 | 3 | 365288 | 72 / 62 | 4 | 280 | 35.242 | 383.809 | 419.579 |
+| 1 | A-D / 4 mesh | 2 / 2 | 3 | 365288 | 72 / 62 | 4 | 280 | 33.924 | 381.413 | 132.704 |
+| 20 | 34fd135 | 21 / 21 | 22 | 657484 | 408 / 228 | 23 | 336 | 72.695 | 464.803 | 538.368 |
+| 20 | A-D / 4 mesh | 21 / 2 | 3 | 365288 | 72 / 62 | 23 | 280 | 33.780 | 395.481 | 136.465 |
+| 200 | 34fd135 | 201 / 201 | 202 | 3454484 | 3546 / 1804 | 201 | 502 | 431.354 | 871.652 | 1305.564 |
+| 200 | A-D / 4 mesh | 201 / 2 | 3 | 365288 | 72 / 62 | 200 | 280 | 33.962 | 394.228 | 137.182 |
+| 4000 | 34fd135 | 4001 / 4001 | 4002 | 59715244 | 69210 / 13968 | 3998 | 3608 | 7785.639 | 9120.385 | 16940.503 |
+| 4000 | A-D / 4 mesh | 4001 / 2 | 3 | 365288 | 72 / 62 | 2124 | 280 | 33.834 | 381.052 | 143.974 |
+
+Final removed voxels=296560 in every row. Motion and mesh queues drain to zero.
+Optimized mesh queue maximum=280 in all these runs. The old implementation did
+not expose mesh queue max; its initial deduplicated dirty set contains 280 chunks
+(the entire stock). The original single material thread also performed meshing;
+optimized runs use one material owner plus four mesh threads (observed peak 4).
+A burst necessarily creates queue backlog even with a fast consumer; the paced
+comparison below is the useful queue/lag comparison for the live use case.
+
+### Nominal 1 kHz, four-second horizontal move
+
+| Counter | 34fd135 | Optimized (1 material + 4 mesh) |
+|---|---:|---:|
+| Motion events | 4001 | 4001 |
+| After coalescing | 4001 | 173 |
+| Total events | 4003 | 4003 |
+| Sweeps | 4002 | 174 |
+| Voxels tested | 59715244 | 2897328 |
+| Voxels removed | 296560 | 296560 |
+| Chunks tested | 69210 | 3030 |
+| Chunks changed | 13968 | 1540 |
+| Motion queue max | 3130 | 7 |
+| Mesh queue max | not measured | 280 |
+| Mesh rebuilds | 3594 | 1933 |
+| Material processing ms | 7811.763 | 484.980 |
+| Mesh build sum ms | 9097.553 | 5017.047 |
+| Wall ms, including 4 s motion | 16944.626 | 4017.055 |
+
+Optimized detailed times: broad 0.437 ms, narrow 449.924 ms,
+mutation 14.669 ms, dirty invalidation 5.471 ms,
+coalescing/dequeue 59.744 ms, snapshot 22.266 ms,
+publication 4.666 ms; 71 stale jobs discarded,
+parallel build peak 4. Completion about 17.055 ms after
+nominal motion end, versus about 12944.626 ms in the baseline.
+This measures worker completion, not screen refresh or LinuxCNC performance.
+
+Material work is now roughly 12.1% of the four-second movement duration;
+snapshot copying is a small part of it. Stage E is therefore deliberately omitted.
+Chunk-parallel mutation would need safe map partitioning/preallocation and ordered
+reduction of counts, versions and dirty results. Large diagonal bounding boxes,
+high-curvature polylines or much larger cuts may justify that work later.
+
+### Mesh worker comparison (4000-event burst)
+
+| Mesh workers | Observed parallel peak | Sweeps | Material ms | Mesh sum ms | Wall ms |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 1 | 3 | 32.389 | 378.367 | 426.359 |
+| 2 | 2 | 4 | 35.500 | 440.872 | 271.366 |
+| 4 | 4 | 3 | 33.556 | 384.767 | 146.356 |
+
+The two-worker run split the collection window once, producing four sweeps and
+35 stale jobs; material geometry was still identical. Thread count alone is not
+a speedup promise, and the automatic cap intentionally avoids using every CPU.
+
+### Deterministic path tests B-E
+
+At h=0.5 mm with a 2 x 3 mm tool, 4000-segment paths compare every voxel before
+and after offline exact coalescing:
+
+| Path | Sweeps before / after | Voxel tests before / after | Removed |
 |---|---:|---:|---:|
-| Material UDP/CLI without rendering | 0.104 ms | 0.223 ms | 0.315 ms |
-| Material UDP/CLI with rendering | 0.097 ms | 0.213 ms | 1.135 ms |
-| Existing renderer reconfiguration + recorder | 0.083 ms | 0.166 ms | 0.341 ms |
+| Straight crossing a chunk boundary (E) | 4000 / 1 | 568956 / 1008 | 456 |
+| Exact diagonal XYZ (B) | 4000 / 1 | 286850 / 5733 | 596 |
+| 90-degree corner (C) | 4000 / 2 | 475990 / 1036 | 450 |
+| Arc-like polyline (D) | 4000 / 4000 | 385766 / 385766 | 1164 |
+| Direction reversal | 4000 / 2 | 532020 / 984 | 264 |
 
-Material queue maxima in those first two tests were 24 and 14 events; the worker
-backlog test observed 1990. These are run-dependent diagnostics, not asserted
-latency limits or real-time guarantees. No wire-motion recovery is claimed for
-packets that never reach the simulator. Detailed logs are local ignored artifacts
-under `build*/Testing/Temporary/LastTest.log` and `build*/phase5-ctest.log`.
+Arc-like motion intentionally receives no approximate speedup. Tests also retain
+finer 0.25-mm X/Y/Z chunk-halo checks. Source and commands:
 
-## Manual LinuxCNC acceptance — exact procedure, not yet executed
+```bash
+for n in 1 20 200 4000; do ./build-headless/material-benchmark "$n" 4; done
+for w in 1 2 4; do ./build-headless/material-benchmark 4000 "$w"; done
+./build-headless/material-benchmark 4000 4 1000
+./build-headless/material-tests coalescing
+./build-headless/material-concurrency
+```
+
+To reproduce the old executable without touching history or the working checkout:
+
+```bash
+mkdir -p build-perf/reference
+git archive 34fd135 | tar -x -C build-perf/reference
+cmake -S build-perf/reference -B build-perf/reference-build \
+  -DCMAKE_BUILD_TYPE=Release -DCNC_SIM_RENDER=OFF -DBUILD_TESTING=OFF
+cmake --build build-perf/reference-build -j4
+c++ -std=c++20 -O3 -DCNC_BENCH_BASELINE \
+  -Ibuild-perf/reference/src \
+  -isystem build-perf/reference/third_party/stepper-ninja/firmware/inc \
+  -isystem build-perf/reference/third_party/stepper-ninja/firmware/modules/inc \
+  tests/material_benchmark.cpp build-perf/reference-build/libcnc_sim_core.a \
+  build-perf/reference-build/libstepper_ninja_original.a -pthread \
+  -o build-perf/reference-benchmark
+./build-perf/reference-benchmark 4000
+./build-perf/reference-benchmark 4000 1 1000
+```
+
+Known limits: deep snapshot copies scale with stored cut material; whole-directory
+coherence may delay rendering when ongoing cuts outpace meshing; a large sweep
+remains indivisible; exact conservative coalescing deliberately rejects uncertain
+floating-point diagonals. Queue allocation remains unbounded/lossless and can
+fail fatally under unlimited overload. No real-time promise or real acceptance
+is inferred from these measurements. Logs remain ignored under `build-perf/` and
+`build*/Testing/Temporary/LastTest.log`.
+
+## Repeat real LinuxCNC acceptance — exact procedure
 
 Use the existing Phase-3 configuration and original installed HAL driver.
 Begin with a newly started simulator so the existing zero-step reference and
@@ -122,6 +278,7 @@ sudo ip netns exec cnc-sim-ns \
   XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
   ./build/cnc-sim \
     --render \
+    --material-workers 1 --mesh-workers 4 \
     --steps-per-unit 400,400,400,400 \
     --io-config examples/phase3/virtual-io.conf
 ```
@@ -200,9 +357,13 @@ Wait for stable removal counters, queue 0 and dirty chunks 0. Record all packet
 and material counters (including maximum queue depth). Expected: persistent groove,
 no gap islands, RX=accepted=TX, all protocol/send/gap error counters zero. Orbit,
 pan, zoom and Home/Fit must remain usable while cutting and preserve the material.
-The final counts should agree with the quantitative test within the documented
-voxel semantics when the actual path matches these moves. Actual path/sample
-quantization is authoritative.
+For this exact path require **296560 removed voxels / 296.560 mm3** after drain.
+After the plunge alone require **56560 / 56.560 mm3**. Record `material show` and
+`status` after plunge and horizontal movement separately, before retracting.
+Compare motion/coalesced/sweep counts, voxels tested, queue max, mesh queue max,
+all timing categories and observed visual lag with the first real run below.
+The groove should follow the moving tool much more closely. Material snapshots
+can lag the actual tool; record any visible catch-up after X25 explicitly.
 
 Optional repeat-cut check: while OFF, return above X5, then enable and repeat the
 three cutting moves; after drain, removed count should not increase for the same
@@ -216,7 +377,7 @@ material show
 
 The original configured stock must reappear, removed voxels return to zero, and
 machine position/tool definition remain unchanged. Capture the observed results
-in a separate real acceptance entry; until then retain **NOT YET PERFORMED**.
+in a separate real acceptance entry; until the operator confirms a successful repeat retain **NOT YET PASSED**.
 
 After closing LinuxCNC and quitting the simulator:
 

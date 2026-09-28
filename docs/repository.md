@@ -123,6 +123,25 @@ Die Spezifikation bleibt als bereitgestellte Quelldatei erhalten.
 [phase5-design.md](phase5-design.md) dokumentiert Analyseplan, Mathematik,
 Threading, Queue, Invalidation, Reset und Grenzen.
 [phase5-test.md](phase5-test.md) enthält Build-/Testergebnisse und die manuelle
-LinuxCNC-Abnahmefolge. Reale Phase-5-Abnahme: **NOT YET PERFORMED**.
+LinuxCNC-Abnahmefolge. Reale Phase-5-Abnahme: **NOT YET PASSED**.
 Builds, Testlogs und Sanitizer-Artefakte bleiben in ignorierten `build*`-Verzeichnissen.
 Vendor-Dateien und Protokollquellen wurden nicht verändert.
+
+## Phase-5-Performanceoptimierung
+
+`src/material/MotionCoalescer.hpp` enthält den konservativen exakten
+Kollinearitätsnachweis. `src/meshing/MeshWorkers.*` verarbeitet unabhängige
+Chunks aus unveränderlichen Sparse-Volume-Snapshots. MaterialWorker bleibt
+alleiniger Materialbesitzer und prüft Generation und Chunk-/Nachbarversionen,
+bevor er vollständige aktuelle Mesh-Verzeichnisse veröffentlicht.
+
+`tests/material_benchmark.cpp` reproduziert den 296560-Voxel-Fingerabdruck
+mit 1/20/200/4000 Segmenten, optional Workerzahl und Mikrosekunden-Taktung;
+der finale Materialzustand wird voxelweise mit der groben Referenz verglichen.
+`tests/material_concurrency.cpp` prüft 1/2/4 Mesh-Threads, parallele Leser,
+Reset-/Werkstückgenerationen, unabhängige Snapshots und sämtliche finalen Meshes.
+Materialtests ergänzen exakte Diagonalen, Richtungswechsel, Ecken, Kurven und
+Chunkübergänge. Bestehende Tests und Vendor-Quellen bleiben aktiv/unverändert.
+Lokale Vergleichsprogramme und Logs liegen ignoriert unter `build-perf/`;
+`build-tsan/` enthält den ThreadSanitizer-Build. Reproduzierbare Resultate und
+Befehle stehen in [phase5-test.md](phase5-test.md).

@@ -14,7 +14,14 @@ std::string describe_material(const MaterialStatus& s, bool compact) {
     if (!s.error.empty()) out << " | ERROR: " << s.error;
     out << "\nTool: flat-end diameter " << s.tool.diameter_mm << " cutting length " << s.tool.length_mm << " mm";
     if (compact) return out.str() + '\n';
-    out << "\nSweeps processed: " << s.removal.sweeps
+    out << "\nWorkers: material " << s.material_workers << " | mesh " << s.mesh_workers << " | parallel mesh peak " << s.mesh_parallel_max
+        << "\nMotion events received: " << s.motion_received << " | after coalescing: " << s.motion_coalesced
+        << "\nMesh queue: " << s.mesh_queue_depth << " / max " << s.mesh_queue_max
+        << "\nBroad phase: " << s.removal.broad_ms << " ms | narrow phase: " << s.removal.narrow_ms
+        << " ms | voxel mutation: " << s.removal.mutation_ms << " ms | dirty invalidation: " << s.removal.invalidation_ms << " ms"
+        << "\nCoalescing: " << s.coalescing_ms << " ms | snapshot: " << s.snapshot_ms << " ms | stale mesh jobs: " << s.stale_mesh_jobs
+        << "\nMesh publication: " << s.publication_ms << " ms"
+        << "\nSweeps processed: " << s.removal.sweeps
         << "\nEvents processed: " << s.events_processed << " | generation " << s.generation
         << "\nChunks tested: " << s.removal.chunks_tested << " | changed: " << s.removal.chunks_changed
         << "\nVoxels tested: " << s.removal.voxels_tested << " | removed: " << s.removal.voxels_removed

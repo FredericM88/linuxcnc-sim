@@ -1,4 +1,5 @@
 #include "material/MaterialRemoval.hpp"
+#include "material/MotionCoalescer.hpp"
 #include "material/MaterialWorker.hpp"
 #include "console/MaterialCommands.hpp"
 #include <algorithm>
@@ -28,6 +29,46 @@ void equal(const SparseVoxelVolume& a, const SparseVoxelVolume& b) {
     CHECK(a.dimensions() == b.dimensions()); const auto d = a.dimensions();
     for (std::int64_t z=0; z<d.z; ++z) for (std::int64_t y=0; y<d.y; ++y) for (std::int64_t x=0; x<d.x; ++x)
         CHECK(a.sample({x,y,z}) == b.sample({x,y,z}));
+}
+void coalescing() {
+    CHECK(exact_straight_extension({0,0,0},{1,2,3},{2,4,6}));
+    CHECK(exact_straight_extension({2,4,6},{1,2,3},{0,0,0}));
+    CHECK(exact_straight_extension({1,2,3},{1,2,3},{2,4,6}));
+    CHECK(exact_straight_extension({1,2,3},{2,4,6},{2,4,6}));
+    CHECK(!exact_straight_extension({0,0,0},{1+0x1p-28,1,0},{2+0x1p-28,2-0x1p-28,0}));
+    CHECK(!exact_straight_extension({0,0,0},{1e-200,1e-200,0},{2e-200,3e-200,0}));
+    CHECK(!exact_straight_extension({0,0,0},{1,2,3},{0,0,0}));
+    CHECK(!exact_straight_extension({0,0,0},{1,0,0},{1,1,0}));
+    CHECK(!exact_straight_extension({0,0,0},{1,1,1},{2,2,std::nextafter(2.,3.)}));
+    CHECK(!exact_straight_extension({0,0,0},{1,1,1},{2,2,2e12}));
+    const auto raw=stock({16,16,8},.5);
+    ToolDefinition tool{ToolKind::FlatEndMill,2,3};
+    for (int shape=0; shape<5; ++shape) {
+        std::vector<glm::dvec3> path{{2,2,2}};
+        for(int i=1;i<=4000;++i) {
+            const double t=double(i)/512;
+            if(shape==0) path.push_back({2+t,2,2});
+            if(shape==1) path.push_back({2+t,2+t,2+t/2});
+            if(shape==2) path.push_back(i<=2000 ? glm::dvec3(2+t,2,2) : glm::dvec3(2+2000./512,2+(i-2000.)/512,2));
+            if(shape==3) path.push_back({6+4*std::cos(i*.001),6+4*std::sin(i*.001),2});
+            if(shape==4) path.push_back({2+(i<=2000 ? t : (4000.-i)/512),2,2});
+        }
+        MaterialRemoval fine(raw), merged(raw);
+        auto a=path[0], b=a; unsigned sweeps=0;
+        for(std::size_t i=1;i<path.size();++i) {
+            fine.sweep(path[i-1],path[i],tool);
+            if(!exact_straight_extension(a,b,path[i])) { merged.sweep(a,b,tool); ++sweeps; a=b; }
+            b=path[i];
+        }
+        merged.sweep(a,b,tool); ++sweeps;
+        equal(fine.volume(),merged.volume());
+        std::cout << "path=" << shape << " fine_sweeps=" << fine.stats().sweeps << " merged_sweeps=" << sweeps
+                  << " fine_tested=" << fine.stats().voxels_tested << " merged_tested=" << merged.stats().voxels_tested
+                  << " removed=" << merged.stats().voxels_removed << '\n';
+        if(shape<2) CHECK(sweeps==1);
+        if(shape==2 || shape==4) CHECK(sweeps==2);
+        if(shape==3) CHECK(sweeps==4000);
+    }
 }
 void geometry() {
     auto raw = stock(); MaterialRemoval cut(raw); ToolDefinition tool{ToolKind::FlatEndMill,2,3};
@@ -137,7 +178,7 @@ void quantitative() {
     // Exact centre grid semantics for a 6 mm groove, 20 mm between centres, depth 2 mm.
     auto raw=stock({30,20,10},.1,{0,0,-20}); MaterialRemoval cut(raw);
     const auto before=count(raw); cut.sweep({5,10,-12},{25,10,-12},{ToolKind::FlatEndMill,6,20});
-    const auto removed=cut.stats().voxels_removed;
+    const auto removed=cut.stats().voxels_removed; CHECK(removed==296560);
     CHECK(before-count(cut.volume())==removed);
     const auto actual=double(removed)*.001, expected=(20*6+glm::pi<double>()*9)*2;
     // Boundary strip bound from voxel circumradius rho, with exact grid-aligned depth.
@@ -263,7 +304,7 @@ void runtime() {
 int main(int argc,char** argv) {
     try {
         CHECK(argc==2); std::string mode=argv[1];
-        if(mode=="geometry") geometry(); else if(mode=="spacing") spacing(); else if(mode=="boundary") boundary();
+        if(mode=="coalescing") coalescing(); else if(mode=="geometry") geometry(); else if(mode=="spacing") spacing(); else if(mode=="boundary") boundary();
         else if(mode=="quantitative") quantitative(); else if(mode=="queue") queue_test(); else if(mode=="runtime") runtime(); else if(mode=="failure") failure();
         else throw std::runtime_error("unknown material test");
         std::cout << "PASS: material " << mode << '\n';
