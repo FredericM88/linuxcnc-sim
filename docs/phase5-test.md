@@ -260,6 +260,282 @@ fail fatally under unlimited overload. No real-time promise or real acceptance
 is inferred from these measurements. Logs remain ignored under `build-perf/` and
 `build*/Testing/Temporary/LastTest.log`.
 
+## Curved-motion baseline of ae13f21 — no production optimization
+
+This baseline was captured from
+`ae13f21c281d05722fd117ad399afc36db67a03e`, **before the next curved-motion
+optimization**. Production MaterialRemoval, MaterialWorker, MotionCoalescer,
+SparseVoxelVolume, mesh scheduling, UDP and protocol code are unchanged.
+Only tests, frozen reference data, CMake test registration and documentation were
+added. There is no sweep union/batching, approximate arc coalescing, new material
+parallelism or analytical circular cut. No future optimization is claimed correct
+or faster. Real Phase-5 acceptance remains **NOT YET PASSED**.
+
+### Fresh-stock geometry and clockwise direction
+
+Each test/benchmark run independently constructs WorkpieceConfig:
+
+| Setting | Value |
+|---|---|
+| Size | 30 x 20 x 10 mm |
+| G53 position | (15, 10, -10) mm |
+| Origin | center / center / max, numerical offset (15, 10, 10) mm |
+| Resulting bounds | X 0..30, Y 0..20, Z -20..-10 mm |
+| Voxel/chunk size | 0.10 mm / 32 cubed |
+| Grid | 300 x 200 x 100 = 6000000 voxels; 280 chunks |
+| Tool | flat-end, diameter 6 mm, cutting length 20 mm, +machine Z |
+| Enable position | (15, 4, -5) mm, entirely above stock |
+| Plunge | (15, 4, -5) -> (15, 4, -12) mm |
+| Arc | (15, 4, -12) -> (5, 4, -12), centre (10, 4), R5, XY/G17, clockwise/G2 |
+
+There is no preceding groove or other cut. Enable contributes a no-removal static
+sweep. The plunge is deliberately **one segment**, with no specified plunge-feed
+or acceleration model. Case A stops after it. Case B applies that same plunge
+and then only the arc. No retract, reset or tool-change sweep is added.
+
+`G2 X5 Y4 I-5 J0` from the rightmost point describes the **lower** semicircle.
+The tool centre reaches Y=-1 mm, outside the stock's Y>=0 region. The current
+volume clips removal naturally; the path is not reflected to the upper half,
+clamped to stock or replaced by its straight chord. Both endpoints lie within
+the configured stock bounds. These facts, the stock transform, exact endpoints,
+unchanged raw stock and tool geometry are explicitly checked.
+
+### Exact sampling and event generation
+
+`tests/generate_curved_motion.py` defines:
+
+```text
+R = 5 mm
+v = 300/60 = 5 mm/s
+dt = 0.001 s
+length = pi*R = 15.707963267949 mm
+duration = pi*R/v = 3.141592653590 s
+N = ceil(duration/dt) = 3142 intervals
+for i = 0..N:
+    theta_i = -min(v*i*dt/R, pi)
+    x_i = 10 + R*cos(theta_i)
+    y_i = 4  + R*sin(theta_i)
+    z_i = -12
+    steps_i = round_to_nearest_away_from_zero_at_halves(400 * position_i)
+```
+
+Endpoints are set explicitly to (6000,1600,-4800) and (2000,1600,-4800) steps.
+Nominal travel per full interval is 0.005 mm; step size is 0.0025 mm. The final
+sample clamps the ideal angle to pi and is delivered at tick 3142, i.e. 3142 ms.
+The ideal remaining final travel takes 0.592653590 ms. There is no synthetic
+acceleration/deceleration, interpolation of real HAL timing, following error or
+claim of an exact LinuxCNC planner replay.
+
+The committed `arc.steps` is the authoritative integer sequence, so C++ tests do
+not recalculate trigonometry. The Python fixture test independently checks every
+byte against regeneration; the smallest distance to a half-step rounding boundary
+is 0.0000732803964638 steps. Each integer endpoint is converted through the
+existing `tool_pose()` at 400 steps/mm, exactly like production machine snapshots.
+Consecutive unchanged XYZ samples would not generate Motion events. For this
+fixture **all 3142 intervals change XYZ**.
+
+| Count | Plunge only | Plunge + arc |
+|---|---:|---:|
+| Generated positions, including initial air pose | 2 | 3144 |
+| Arc positions alone, including shared plunge endpoint | 0 | 3143 |
+| Generated/received Motion events | 1 | 3143 |
+| Other worker events | Enable + Capture | Enable + Capture |
+| Total worker events | 3 | 3145 |
+
+Both burst and paced modes replay exactly these endpoints. Paced mode sleeps to
+absolute monotonic deadlines `arc_start + tick*1ms`; event timestamps reflect the
+actual enqueue time. Late OS wakeups can lead to catch-up bursts, but never skipped
+samples or changed coordinates. Only the arc is paced; the plunge remains one
+event. The benchmark exercises the existing MaterialWorker/MotionQueue pipeline,
+not a new UDP generator or a G-code parser. Existing UDP integration tests remain
+in the full suites.
+
+### Frozen full-volume reference and fixed counters
+
+[Reference artifacts](../tests/fixtures/curved-material/README.md) retain the
+**entire final occupancy**, not just a removed count. `plunge.rle` and
+`plunge-arc.rle` encode all six million 0/255 values in canonical z/y/x order,
+x fastest, as lossless text run-lengths. The expected state is read from disk;
+normal tests never generate it from the implementation being tested.
+
+`tests/VoxelReference.hpp` compares every cell, and also reports FNV-1a-64 over
+three uint64 little-endian grid dimensions followed by the canonical voxel bytes.
+It does not iterate sparse maps. A test explicitly varies sparse insertion and
+materialization order. Hash equality is supplementary; the exact comparisons do
+not depend on collision resistance. Transform/tool configuration is checked
+separately, and versions/timings are not serialized as geometry.
+
+| State | Removed voxels | Removed mm3 | FNV-1a-64 |
+|---|---:|---:|---|
+| Fresh stock + plunge | 56560 | 56.560 | `95c98093e6e51d52` |
+| Fresh stock + plunge + arc | 166400 | 166.400 | `585ccf7e9d0561a2` |
+| Additional removal caused by arc | 109840 | 109.840 | difference, not a separate stock state |
+| Fresh stock + plunge + straight chord | 176560 | 176.560 | `d147bb5429b4d692` |
+
+Arc and chord differ at **78560 individual voxel locations**. Explicit witnesses
+include local voxel (100,40,80), preserved by the arc and removed by the chord,
+and (100,0,80), removed by the arc and preserved by the chord. This prevents a
+future endpoint-only/chord shortcut even if removed counts happen to agree.
+
+`serial.stats` pins scheduling-independent structural counters. The raw reference
+calls the unchanged MaterialRemoval for every individual segment. A separate
+**test-only** replay applies the existing exact predicate greedily, with no
+wall-clock flush boundaries; it also compares every voxel with the frozen arc.
+Quantized curved motion does contain some exact straight runs, so 3142 arc events
+become 2574 arc events in this offline replay (2575 with the plunge).
+
+| Reference replay | Sweeps incl. Enable | Chunks tested | Chunks changed | Voxel tests | Removed |
+|---|---:|---:|---:|---:|---:|
+| Plunge only | 2 | 18 | 16 | 80724 | 56560 |
+| Plunge + all 3142 arc segments | 3144 | 29894 | 6884 | 29115741 | 166400 |
+| Arc-only increment in that serial replay | 3142 | 29876 | 6868 | 29035017 | 109840 |
+| Plunge + offline exact-coalesced arc | 2576 | 23930 | 5820 | 22944469 | 166400 |
+
+Alternative segmentation splits an original edge only when its represented
+binary64 midpoint is proven exactly on that edge by the existing exact predicate;
+otherwise the edge is retained. This gives **4534 arc edges**, 4536 sweeps including
+plunge/Enable, 43752 tested chunks, 7526 changed chunks and 43146111 voxel tests.
+All six million final cells match the frozen arc. This is a subdivision of the
+same polyline, **not** another angular discretization of the ideal circle.
+Two independent worker executions with the same path and 1 material/4 mesh
+threads also compare exactly against the frozen reference and against each other.
+
+Runtime coalescing boundaries depend on the existing 20-ms budget and scheduling;
+therefore runtime sweeps/chunk tests/voxel tests, queue peaks and mesh job counts
+can vary while the input sequence and final state remain identical. The tests pin
+the serial/offline structural counts and the generated/received event counts.
+They also assert correct accounting, drained queues, zero final lag and current
+mesh generation/version. They do not assert a timing or queue-peak performance
+threshold. No existing test or tolerance was relaxed.
+
+### Curved benchmark measurements
+
+Measured sequentially after all build/test processes finished, on GCC 14.2.0
+Release with 14 available logical CPUs (2026-09-28). These are individual
+baseline observations, not throughput guarantees or pass/fail time limits.
+
+| Metric | Plunge, burst | Plunge + arc, burst | Plunge, paced case | Plunge + arc, 1 kHz |
+|---|---:|---:|---:|---:|
+| Generated positions including initial pose | 2 | 3144 | 2 | 3144 |
+| Generated Motion events | 1 | 3143 | 1 | 3143 |
+| Received Motion events | 1 | 3143 | 1 | 3143 |
+| Motion events after coalescing | 1 | 2591 | 1 | 2580 |
+| Total events (incl. Enable/Capture) | 3 | 3145 | 3 | 3145 |
+| Sweeps (incl. Enable) | 2 | 2592 | 2 | 2581 |
+| Chunks tested | 18 | 24104 | 18 | 23996 |
+| Chunks changed | 16 | 5864 | 16 | 5834 |
+| Voxels tested | 80724 | 23142589 | 80724 | 23020413 |
+| Voxels removed | 56560 | 166400 | 56560 | 166400 |
+| Removed mm3 | 56.560 | 166.400 | 56.560 | 166.400 |
+| Broad phase ms | 0.006 | 4.502 | 0.005 | 4.530 |
+| Narrow phase ms | 4.925 | 3420.238 | 4.635 | 3459.533 |
+| Mutation ms | 2.013 | 40.122 | 2.091 | 40.685 |
+| Dirty invalidation ms | 0.189 | 35.928 | 0.179 | 36.119 |
+| Worker processing ms | 7.492 | 3615.740 | 7.284 | 3656.478 |
+| Coalescing ms | 0.442 | 23.703 | 0.443 | 24.908 |
+| Snapshot ms | 0.275 | 17.617 | 0.419 | 18.381 |
+| Mesh publication ms | 0.089 | 0.308 | 0.076 | 0.315 |
+| Mesh jobs / rebuilds | 280 | 1979 | 280 | 2214 |
+| Stale mesh jobs | 0 | 1679 | 0 | 1910 |
+| Accepted mesh jobs | 280 | 300 | 280 | 304 |
+| Mesh processing sum ms | 339.733 | 4734.812 | 340.064 | 5206.111 |
+| Motion queue maximum | 3 | 3120 | 3 | 490 |
+| Mesh queue peak | 280 | 280 | 280 | 280 |
+| Final worker lag ms | 0.000 | 0.000 | 0.000 | 0.000 |
+| Wall time ms | 95.202 | 3677.310 | 95.573 | 3758.683 |
+| Material workers | 1 | 1 | 1 | 1 |
+| Mesh workers | 4 | 4 | 4 | 4 |
+| Observed parallel mesh peak | 4 | 4 | 4 | 4 |
+
+Plunge versus plunge+arc differs by exactly **109840 removed voxels / 109.840 mm3**.
+The independently measured wall-time difference in the paced pair was 3663.111 ms;
+completion was approximately 616.683 ms beyond the nominal arc delivery
+interval, including startup/plunge/shutdown overhead.
+
+A second standalone paced arc run measured 2581 coalesced motion events,
+2582 sweeps, queue max 443, 2191 mesh jobs (1891 stale), and
+3714.108 ms wall time. Both benchmark repetitions require **exact cell equality**
+to the same frozen states; both reported `585ccf7e9d0561a2`. The difference in
+runtime counters is expected from the unchanged deadline-driven consumer.
+
+Separately measured direct serial replay, without worker scheduling or meshes:
+
+| Timing | Plunge only | Plunge + all original arc segments |
+|---|---:|---:|
+| Broad phase ms | 0.005 | 5.528 |
+| Narrow phase ms | 4.318 | 4106.653 |
+| Mutation ms | 1.985 | 49.120 |
+| Dirty invalidation ms | 0.178 | 44.336 |
+| Wall ms | 6.614 | 4343.732 |
+
+
+All benchmark cases use fresh stock, one material owner and four mesh threads.
+Wall time includes worker construction, Enable, plunge, input pacing if selected,
+final Capture copy and complete material/mesh shutdown. Raw stock construction,
+reading/expanding fixtures, exact comparisons and fingerprint calculation are
+outside wall time. The initial full-stock mesh work is included in **each** case;
+subtracting independently timed runs is a diagnostic difference, not isolated CPU
+arc cost. The serial table above supplies the exact additive geometric/work delta.
+
+Mesh job count is derived from the existing rebuild counter after complete drain:
+every submitted job completed then, including rejected stale jobs. Accepted jobs
+are rebuilds minus stale jobs; they are not unique chunk counts. Mesh milliseconds
+sum job elapsed durations across threads and can exceed benchmark wall time.
+Queue peak is an observed high-water mark, **not capacity**. There is no fixed
+configured mesh-queue capacity: this implementation has one batch (at most 280
+chunk jobs for this stock) plus one deduplicated pending set (at most 280 entries).
+Those sets can refer to the same chunk; 560 is a structural bound here, not a
+preallocated queue. MotionQueue remains dynamically allocated and unbounded.
+Final worker lag is zero after drain and is not an in-motion visual latency metric.
+
+### Curved baseline validation and reproduction
+
+| Validation after adding the curved baseline | Result |
+|---|---|
+| Graphics Release, full CTest suite | **49/49 passed**, no skips |
+| Headless Release, full CTest suite | **46/46 passed**, no skips |
+| ASan/UBSan + leak detection, full headless suite | **46/46 passed**, no reports |
+| TSan, all curved tests plus existing concurrency/queue/runtime/failure tests | **12/12 passed**, no reports |
+| Vendor integrity | nine unchanged original files match pinned SHA-256 |
+| Protocol/HAL/UDP and namespace tests | passed in full suites, no namespace skip |
+| Source integrity against ae13f21 | no changes under `src/`, `third_party/`, `stepper-ninja/` |
+| Real LinuxCNC acceptance | **NOT YET PASSED** |
+
+
+New CTests cover configuration/fingerprint ordering, plunge, arc plus fixed
+coalescer replay, same-polyline subdivision, identical worker repetition, the
+chord distinction, paced worker replay and integer fixture regeneration.
+The optional brute-force union oracle was not added: the frozen complete occupancy
+and independent replay/subdivision checks supply the baseline without a new
+production or test union algorithm.
+
+Use the complete Graphics/Headless/ASan build commands above. Relevant TSan run:
+
+```bash
+cmake --build build-tsan -j4
+TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build-tsan \
+  -R 'curved-|material-(concurrency|queue|runtime|failure)' --output-on-failure
+```
+
+Individual checks and benchmark commands:
+
+```bash
+python3 tests/generate_curved_motion.py
+ctest --test-dir build-headless -R '^curved-' --output-on-failure
+./build-headless/curved-material-tests benchmark burst 4
+./build-headless/curved-material-tests benchmark paced 4
+./build-headless/curved-material-tests arc
+./build-headless/curved-material-tests segmentation
+./build-headless/curved-material-tests repeat
+./build-headless/curved-material-tests chord
+```
+
+CTest never rewrites expected files. The explicit `record NEW_DIRECTORY` command
+refuses an existing directory and is only for deliberate reference investigation;
+do not replace these ae13f21 fixtures to make a future optimized implementation
+pass. Record candidate output elsewhere and require exact equality with these
+original states. Logs and temporary captures remain ignored under `build-curved/`.
+
 ## Repeat real LinuxCNC acceptance — exact procedure
 
 Use the existing Phase-3 configuration and original installed HAL driver.
