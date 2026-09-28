@@ -38,6 +38,8 @@ struct SceneConfig {
 enum class ChunkState : std::uint8_t { Empty, Solid, Mixed };
 struct VoxelChunk {
     ChunkState state{ChunkState::Empty};
+    std::uint32_t occupied{};
+    std::uint64_t version{};
     std::vector<VoxelValue> values; // Only Mixed allocates; x varies fastest.
 };
 
@@ -49,6 +51,10 @@ public:
     VoxelValue sample(VoxelCoord voxel) const;
     ChunkState chunk_state(ChunkCoord chunk) const;
     const VoxelChunk& materialize_chunk(ChunkCoord chunk);
+    bool erase(VoxelCoord voxel);
+    std::uint64_t version() const { return version_; }
+    std::uint64_t chunk_version(ChunkCoord c) const;
+    std::uint64_t removed_voxels() const { return removed_; }
     VoxelCoord local_to_voxel(glm::dvec3 mm) const;
     glm::dvec3 voxel_to_local(VoxelCoord voxel) const;
     ChunkCoord voxel_to_chunk(VoxelCoord voxel) const;
@@ -62,6 +68,7 @@ public:
     std::size_t stored_voxel_bytes() const;
 private:
     bool inside(VoxelCoord voxel) const;
+    std::uint64_t version_{}, removed_{};
     SceneConfig config_;
     VoxelCoord dimensions_;
     std::unordered_map<ChunkCoord, VoxelChunk, ChunkCoordHash> chunks_;

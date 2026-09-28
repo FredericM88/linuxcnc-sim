@@ -1,4 +1,4 @@
-# Repositorybestand bis Phase 4A.1
+# Repositorybestand bis Phase 5
 
 ## Struktur und reproduzierbarer Build
 
@@ -10,13 +10,14 @@ CODEX_PHASE2_*.md                ursprünglicher Phase-2-Auftrag
 CODEX_PHASE3_*.md                ursprünglicher Phase-3-Auftrag
 codex_phase4a_linuxcnc_sim.md    verbindlicher Phase-4A-Auftrag
 codex_phase4a1_*.md              verbindlicher Phase-4A.1-Auftrag
+codex_phase5_material_removal.md verbindlicher Phase-5-Auftrag
 docs/                           Protokollanalyse, Herkunft und Phasenabnahmen
 examples/phase1/                 LinuxCNC-Beispiel für Motion
 examples/phase3/                 LinuxCNC-Beispiel mit VirtualIO, Homing und Probe
 scripts/                        veth-/Namespace-Einrichtung, Start und Teardown
 src/                            C++20-Simulator: Protokoll, UDP, Maschine,
                                 Simulation, Recorder, Konsole, virtuelle I/O,
-                                Sparse-Volumen, CPU-Meshing, Werkzeug und Renderer
+                                Sparse-Volumen, Material-Worker, CPU-Meshing, Werkzeug und Renderer
 tests/                          C/C++-, Python- und Shell-Tests
 third_party/stepper-ninja/       neun unveränderte Dateien für den Protokollkern,
                                 SHA256SUMS und UPSTREAM.md
@@ -27,7 +28,7 @@ Die ursprünglichen CODEX-Auftragsdokumente bleiben als historische Spezifikatio
 erhalten. Den aktuellen Status liefern README und die Phasenabnahmen.
 
 Der Produktionsbuild verwendet `src/` und `third_party/stepper-ninja/`.
-Für die vollständige Suite mit 24 Headless-Tests und optional zwei Grafiktests ist außerdem
+Für die vollständige Suite einschließlich des Original-HAL-Tests ist außerdem
 `stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c` erforderlich:
 `original-hal-inputs` kompiliert und prüft den Original-HAL-Code direkt.
 Die Anleitung zum separat gebauten LinuxCNC-HAL-Modul benötigt ebenfalls den
@@ -101,3 +102,27 @@ Die reale/interaktive Phase-4A.1-Abnahme vom 2026-09-27 mit LinuxCNC 2.9.10
 ist in [phase4a1-test.md](phase4a1-test.md) dokumentiert.
 [phase4a-test.md](phase4a-test.md) enthält weiterhin die automatisierten
 Build-/Regressionsergebnisse und ergänzende manuelle Prüfanleitungen.
+
+## Materialsimulation (Phase 5)
+
+`src/material/MaterialRemoval.*` verbindet den analytischen Tool-Sweep mit der
+bestehenden SparseVoxelVolume und DirtyChunks. `MotionQueue.hpp` ist die geordnete
+SPSC-Übergabe; `MaterialWorker.*` besitzt das veränderliche Material, verarbeitet
+Steuerereignisse und publiziert unveränderliche Mesh-Verzeichnisse.
+`src/console/MaterialCommands.*` integriert Werkzeug-/Materialbefehle und Diagnostik.
+Simulation liefert die tatsächlich integrierten Bewegungen; Renderer lädt nur
+geänderte Meshes aus den Veröffentlichungen. Der bisherige synchrone Renderer-
+Pfad bleibt für eigenständige Szenentests erhalten.
+
+Erweitert wurden `SparseVoxelVolume`, `Tool`, `SurfaceMesher::DirtyChunks`,
+`Simulation`, `Renderer`, `main.cpp` und CMake. Neue Tests liegen in
+`tests/material_tests.cpp` und `tests/material_integration.py`; der bestehende
+Framebuffer-Test prüft zusätzlich Schnitt, Persistenz und Reset.
+Die Spezifikation bleibt als bereitgestellte Quelldatei erhalten.
+
+[phase5-design.md](phase5-design.md) dokumentiert Analyseplan, Mathematik,
+Threading, Queue, Invalidation, Reset und Grenzen.
+[phase5-test.md](phase5-test.md) enthält Build-/Testergebnisse und die manuelle
+LinuxCNC-Abnahmefolge. Reale Phase-5-Abnahme: **NOT YET PERFORMED**.
+Builds, Testlogs und Sanitizer-Artefakte bleiben in ignorierten `build*`-Verzeichnissen.
+Vendor-Dateien und Protokollquellen wurden nicht verändert.

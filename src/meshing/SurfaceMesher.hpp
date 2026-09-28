@@ -14,12 +14,16 @@ class SurfaceMesher final : public IMeshExtractor {
 public:
     ChunkMesh build(const SparseVoxelVolume& volume, ChunkCoord chunk) const override;
 };
-// Single-owner, deduplicated work list. Phase 4B can mark changed chunks and
-// their neighbours; consumers build outside any machine-state lock.
+// Single-owner, deduplicated material/halo work list.
 class DirtyChunks {
 public:
     void mark(ChunkCoord c) { chunks_.insert(c); }
     std::vector<ChunkCoord> take();
+    std::size_t size() const { return chunks_.size(); }
+    bool pop(ChunkCoord& c) {
+        if (chunks_.empty()) return false;
+        auto it = chunks_.begin(); c = *it; chunks_.erase(it); return true;
+    }
 private:
     std::unordered_set<ChunkCoord, ChunkCoordHash> chunks_;
 };

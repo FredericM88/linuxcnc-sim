@@ -17,6 +17,11 @@ enum class ToolKind { FlatEndMill, BallEndMill, VBit, ProbeSphere };
 struct ToolDefinition {
     ToolKind kind{ToolKind::FlatEndMill};
     double diameter_mm{6};
-    double length_mm{30};
+    double length_mm{20}; // Cutting length, +machine Z from bottom-centre tip.
+    bool operator==(const ToolDefinition&) const = default;
 };
+void validate_tool(const ToolDefinition& tool);
+// Closed swept cylinder, with a fixed spatial tolerance (mm).
+constexpr double sweep_tolerance_mm = 1e-9;
+bool swept_tool_contains(const ToolDefinition& tool, glm::dvec3 a, glm::dvec3 b, glm::dvec3 point);
 } // namespace cnc

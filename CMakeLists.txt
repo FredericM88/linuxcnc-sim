@@ -33,7 +33,10 @@ add_library(cnc_sim_core STATIC
     src/io/VirtualSensors.cpp
     src/volume/SparseVoxelVolume.cpp
     src/meshing/SurfaceMesher.cpp
-    src/tool/Tool.cpp)
+    src/tool/Tool.cpp
+    src/material/MaterialRemoval.cpp
+    src/material/MaterialWorker.cpp
+    src/console/MaterialCommands.cpp)
 target_include_directories(cnc_sim_core PUBLIC src)
 find_package(Threads REQUIRED)
 find_package(glm REQUIRED)
@@ -57,6 +60,13 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(material-tests tests/material_tests.cpp)
+    target_link_libraries(material-tests PRIVATE cnc_sim_core)
+    target_compile_options(material-tests PRIVATE -Wall -Wextra -Wpedantic)
+    foreach(test geometry spacing boundary quantitative queue runtime failure)
+        add_test(NAME material-${test} COMMAND material-tests ${test})
+        set_tests_properties(material-${test} PROPERTIES TIMEOUT 60)
+    endforeach()
     add_executable(workpiece-tests tests/workpiece_tests.cpp)
     target_link_libraries(workpiece-tests PRIVATE cnc_sim_core)
     target_compile_options(workpiece-tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -101,6 +111,14 @@ if(BUILD_TESTING)
         add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
     endif()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME material-integration COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/material_integration.py" "$<TARGET_FILE:cnc-sim>")
+    set_tests_properties(material-integration PROPERTIES TIMEOUT 60)
+    if(CNC_SIM_RENDER_TESTS)
+        add_test(NAME material-render-integration COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/material_integration.py" "$<TARGET_FILE:cnc-sim>" --render)
+        set_tests_properties(material-render-integration PROPERTIES LABELS renderer TIMEOUT 60)
+    endif()
     add_test(NAME workpiece-cli COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/workpiece_cli.py" "$<TARGET_FILE:cnc-sim>")
     set_tests_properties(workpiece-cli PROPERTIES TIMEOUT 30)

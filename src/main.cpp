@@ -11,6 +11,7 @@
 #include <string_view>
 #include <future>
 #include <sstream>
+#include "console/MaterialCommands.hpp"
 #include "console/TerminalUI.hpp"
 #include "console/IOCommands.hpp"
 #include "console/WorkpieceCommands.hpp"
@@ -205,7 +206,7 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
     {
         cnc::TerminalUI terminal(options.interactive);
         if (!terminal.fixed()) {
-            std::cout << "Stepper-Ninja virtual device (Phase 4A, 4 stepgens / 3 stationary encoders)\n"
+            std::cout << "Stepper-Ninja virtual device (Phase 5, 4 stepgens / 3 stationary encoders)\n"
                       << "Wire sizes: " << cnc::request_size << " RX / " << cnc::response_size << " TX\n"
                       << "Reference: zero steps on startup; scales are local configuration\n"
                       << "Listening: " << options.bind_address << ':' << simulation.port() << std::endl;
@@ -235,7 +236,7 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                             "record save <file>: CSV snapshot; status: refresh; help; quit: exit\n"
                             "Aliases: begin record, stop record, clear record, save record <file>\n"
                             "input show | n on/off | clear; limits show; probe show\n"
-                            "help io: sensor configuration in steps\n" + std::string(cnc::workpiece_help);
+                            "help io: sensor configuration in steps\n" + std::string(cnc::workpiece_help) + "\n" + cnc::material_help;
                         if (extra == "io") message = "input show | input n on/off | input clear (manual OR automatic)\n"
                             "limits set X min <trigger_steps> <hysteresis_steps> <input>\n"
                             "limits off X min; limits show (X/Y/Z; min/max)\n"
@@ -244,6 +245,8 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                     } else if (first == "input" || first == "limits" || first == "probe") {
                         const auto command = cnc::parse_io_command(line);
                         message = cnc::describe_io(command, simulation.command(cnc::Action::IO, command).io);
+                    } else if (first == "tool" || first == "material") {
+                        message = cnc::execute_material_command(simulation, line);
                     } else if (first == "workpiece") {
                         const auto before = simulation.workpiece_snapshot();
                         const auto command = cnc::parse_workpiece_command(line, before->config);
@@ -254,7 +257,8 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                     } else if (first == "status") {
                         if (parser >> extra) throw std::runtime_error("usage: status");
                         message = simulation.command(cnc::Action::Status).message;
-                        if (!terminal.fixed()) std::cout << statistics(simulation.status(), options, false);
+                        if (!terminal.fixed()) std::cout << statistics(simulation.status(), options, false)
+                            << cnc::describe_material(simulation.material_status()) << std::endl;
                     } else {
                         parser >> second;
                         if (second == "record") std::swap(first, second);
@@ -295,6 +299,8 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                 if (!terminal.fixed()) std::cout << message << std::endl;
             }
             const auto state = simulation.status();
+            const auto material = simulation.material_status();
+            if (!material.error.empty()) throw std::runtime_error(material.error);
             if (!state.fatal_error.empty()) throw std::runtime_error(state.fatal_error);
             const auto now = std::chrono::steady_clock::now();
             if (!terminal.fixed() && state.peer != peer) {
@@ -302,13 +308,13 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                 std::cout << "Connected peer: " << peer << std::endl;
             }
             if (now - last_draw >= std::chrono::milliseconds(200)) {
-                terminal.draw(statistics(state, options, true), message);
+                terminal.draw(statistics(state, options, true) + cnc::describe_material(material, true), message);
                 if (options.verbose && !terminal.fixed()) std::cout << "Latest RX: " << state.packets.received_packets
                     << " accepted: " << state.packets.accepted_packets << " invalid: " << state.packets.invalid_packets << std::endl;
                 last_draw = now;
             }
             if (!terminal.fixed() && options.stats_ms && now - last_stats >= std::chrono::milliseconds(options.stats_ms)) {
-                std::cout << statistics(state, options, false) << std::flush;
+                std::cout << statistics(state, options, false) << cnc::describe_material(material) << std::endl;
                 last_stats = now;
             }
         }
@@ -335,7 +341,7 @@ int main(int argc, char** argv) {
 #ifdef CNC_SIM_RENDER
         if (options.render) {
             auto rendered = simulation.workpiece_snapshot();
-            cnc::Renderer renderer(*rendered->volume);
+            cnc::Renderer renderer(*rendered->volume, {}, false);
             std::exception_ptr console_error;
             std::jthread console([&] {
                 try { run_console(simulation, options); }
@@ -343,11 +349,7 @@ int main(int argc, char** argv) {
             });
             try {
                 while (!stopping) {
-                    const auto active = simulation.workpiece_snapshot();
-                    if (active != rendered) {
-                        renderer.set_workpiece(*active->volume);
-                        rendered = active;
-                    }
+                    renderer.apply_material(simulation.material_meshes());
                     if (!renderer.draw(simulation.machine_snapshot())) break;
                     renderer.present();
                 }
@@ -363,7 +365,9 @@ int main(int argc, char** argv) {
 #endif
         { run_console(simulation, options); }
         simulation.stop();
-        std::cout << "Stopped. Final statistics:\n" << statistics(simulation.status(), options, false) << std::flush;
+        if (!simulation.material_status().error.empty()) throw std::runtime_error(simulation.material_status().error);
+        if (!simulation.status().fatal_error.empty()) throw std::runtime_error(simulation.status().fatal_error);
+        std::cout << "Stopped. Final statistics:\n" << statistics(simulation.status(), options, false) << cnc::describe_material(simulation.material_status()) << std::endl;
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "cnc-sim: " << error.what() << '\n';

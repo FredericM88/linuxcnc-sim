@@ -1,4 +1,4 @@
-# Virtueller Stepper-Ninja – Phase 4A.1
+# Virtueller Stepper-Ninja – Phase 5
 
 Ein Linux-C++20-Programm empfängt die originalen Stepper-Ninja-UDP-Pakete,
 dekodiert Step-Bursts, integriert vier virtuelle Motorpositionen in `int64_t`
@@ -18,6 +18,7 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | automatisiert getestet; OpenGL-/G53-Pfad im Rahmen der realen 4A.1-Abnahme bestätigt |
 | Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | automatisiert getestet und am 2026-09-27 real/interaktiv mit LinuxCNC 2.9.10 erfolgreich abgenommen |
+| Phase 5: kontinuierlicher Voxel-Materialabtrag | implementiert und automatisiert getestet; reale LinuxCNC-Abnahme: **NOT YET PERFORMED** |
 
 Die reale Phase-4A.1-Abnahme wurde vom Benutzer bestätigt: Runtime-Geometrie,
 Origins, Platzierung und G53-Werkzeugposition stimmten mit LinuxCNC 2.9.10
@@ -104,7 +105,44 @@ Mausrad: Zoom; Home: Fit Scene. Der Fenstertitel zeigt XYZ in mm.
 Kompatible Startoptionen: `--voxel-size 0.1`, `--stock-size 50,50,10`,
 `--stock-origin 0,0,-10`, `--stock-rotation 0,0,0` (Grad, Rz·Ry·Rx).
 Sparse-Volumen und CPU-Mesher sind OpenGL-unabhängig; keine Voxelarrays für das
-unbearbeitete Rohteil. **Phase 4A enthält keinen Materialabtrag oder Tool Sweep.**
+unbearbeitete Rohteil. Phase 5 ergänzt den unten beschriebenen kontinuierlichen Materialabtrag.
+
+## Phase 5: kontinuierlicher Materialabtrag
+
+```text
+tool flat-end 6 20
+material on
+material show
+material off
+material reset
+```
+
+Material startet **OFF**. Erst nach Homing und Positionierung bewusst einschalten.
+Der Flachfräser verwendet die tatsächliche G53-Werkzeugspitze als Bottom-Centre
+und schneidet von dort 20 mm entlang +Z. `tool show` zeigt seine Konfiguration.
+ON erfasst auch die aktuelle stehende Position; OFF erhält vorhandene Schnitte.
+Reset erzeugt das Rohteil aus der aktuellen Werkstückkonfiguration neu und behält
+Werkzeug und Ein/Aus-Zustand. `workpiece reset` stellt dagegen die ursprüngliche
+Werkstückkonfiguration wieder her.
+
+Eine verlustfreie geordnete FIFO übergibt integrierte XYZ-Bewegungen und
+Steuerereignisse an einen separaten Material-Worker. Dieser prüft analytische
+kontinuierliche Zylinder-Sweeps gegen Voxelzentren, entfernt Material dauerhaft
+und baut nur geänderte Chunk-/Nachbarmeshes neu. OpenGL erhält unveränderliche,
+konsistente Mesh-Stände; Kamera und Werkzeugposition bleiben unabhängig bedienbar.
+UDP wartet weder auf Materialberechnung noch Meshing oder OpenGL.
+
+Befehlsantworten bestätigen die Einreihung; `material show` zeigt den verarbeiteten
+Zustand, Queue-Rückstau, Schnitt-/Meshzähler, Volumen und Laufzeiten. Bei Überlast
+wächst die Queue im RAM, ohne Bewegungen zu verwerfen. Speicher-/Workerfehler
+beenden die Simulation ausdrücklich als unvollständig. Dies ist keine harte
+Echtzeitgarantie des Betriebssystems oder Speicherallokators.
+
+Die Voxelzentrenregel ist binär (255 -> 0), auflösungsabhängig und nicht CAD-exakt.
+Keine Kollisionen, Schnittkräfte, A-Achsen-Rotation oder automatische G54/G55-
+Verarbeitung. Mathematik und Grenzen: [Phase-5-Design](docs/phase5-design.md).
+Build-/Testergebnisse und **exakte Befehle für die noch ausstehende reale Abnahme**:
+[Phase-5-Tests](docs/phase5-test.md).
 
 ## Werkstück zur Laufzeit konfigurieren (Phase 4A.1)
 
@@ -156,7 +194,7 @@ cmake --build build-headless -j4
 env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-failure
 ```
 
-Geprüft: **26/26 Tests mit Grafiktests**, **24/24 im Headless-Release-Build**,
+Historischer Phase-4A.1-Stand: **26/26 Tests mit Grafiktests**, **24/24 im Headless-Release-Build**,
 keine Fehler/Skips; auch OpenGL 3.3 Core auf Mesa/radeonsi erfolgreich geprüft.
 Details: [Architektur und Entscheidungen](docs/phase4a-design.md),
 [automatisierte Testergebnisse](docs/phase4a-test.md),
@@ -386,7 +424,7 @@ Herkunft, bewusst ausgeschlossene Upstream-Artefakte, Verzeichnisstruktur und
 lokale/generierte Dateien beschreibt [docs/repository.md](docs/repository.md).
 Paketgrößen, alle Offsets, Profil und Little Endian werden beim Kompilieren abgesichert. Das Programm unterstützt in dieser
 Phase Linux auf Little-Endian-Systemen. Die optionale OpenGL-Ansicht erweitert
-den Simulator um Visualisierung. Materialabtrag, Qt, EtherCAT und ein eigener
+den Simulator um Visualisierung. Phase 5 ergänzt persistenten Voxel-Materialabtrag. Qt, EtherCAT und ein eigener
 G-Code-Interpreter sind nicht enthalten.
 
 Die Antwort bestätigt den Empfang, keine mechanisch gemessene Bewegung. Der

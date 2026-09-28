@@ -82,7 +82,8 @@ ChunkState SparseVoxelVolume::chunk_state(ChunkCoord c) const {
 }
 const VoxelChunk& SparseVoxelVolume::materialize_chunk(ChunkCoord c) {
     if (const auto it = chunks_.find(c); it != chunks_.end()) return it->second;
-    VoxelChunk chunk{chunk_state(c), {}};
+    VoxelChunk chunk;
+    chunk.state = chunk_state(c);
     if (chunk.state == ChunkState::Mixed) {
         const auto n = config_.volume.chunk_size;
         const auto p = chunk_origin(c);
@@ -92,7 +93,33 @@ const VoxelChunk& SparseVoxelVolume::materialize_chunk(ChunkCoord c) {
                 for (std::uint32_t x = 0; x < n; ++x)
                     chunk.values.push_back(inside({p.x + x, p.y + y, p.z + z}) ? 255 : 0);
     }
+    chunk.occupied = chunk.state == ChunkState::Solid ?
+        config_.volume.chunk_size * config_.volume.chunk_size * config_.volume.chunk_size :
+        static_cast<std::uint32_t>(std::count(chunk.values.begin(), chunk.values.end(), VoxelValue{255}));
     return chunks_.emplace(c, std::move(chunk)).first->second;
+}
+bool SparseVoxelVolume::erase(VoxelCoord p) {
+    if (!inside(p) || sample(p) != 255) return false;
+    const auto c = voxel_to_chunk(p);
+    materialize_chunk(c);
+    auto& chunk = chunks_.at(c);
+    const auto n = config_.volume.chunk_size;
+    if (chunk.state == ChunkState::Solid) {
+        chunk.values.assign(static_cast<std::size_t>(n) * n * n, 255);
+        chunk.state = ChunkState::Mixed;
+    }
+    const auto local = chunk_local(p);
+    chunk.values[static_cast<std::size_t>(local.x + n * (local.y + n * local.z))] = 0;
+    ++version_; ++removed_; ++chunk.version;
+    if (--chunk.occupied == 0) {
+        chunk.state = ChunkState::Empty;
+        std::vector<VoxelValue>().swap(chunk.values);
+    }
+    return true;
+}
+std::uint64_t SparseVoxelVolume::chunk_version(ChunkCoord c) const {
+    const auto it = chunks_.find(c);
+    return it == chunks_.end() ? 0 : it->second.version;
 }
 VoxelCoord SparseVoxelVolume::local_to_voxel(glm::dvec3 mm) const {
     VoxelCoord result;

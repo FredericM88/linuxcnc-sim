@@ -9,9 +9,10 @@
 #include "io/VirtualSensors.hpp"
 #include "simulation/Workpiece.hpp"
 #include "tool/Tool.hpp"
+#include "material/MaterialWorker.hpp"
 
 namespace cnc {
-enum class Action { Begin, Stop, Clear, Save, Status, IO };
+enum class Action { Begin, Stop, Clear, Save, Status, IO, Material };
 struct SimulationStatus {
     Statistics packets;
     StepPositions positions{};
@@ -39,13 +40,19 @@ public:
     MachineSnapshot machine_snapshot() const;
     std::shared_ptr<const SparseVoxelVolume> volume() const { return workpiece_snapshot()->volume; }
     std::shared_ptr<const WorkpieceSnapshot> workpiece_snapshot() const;
-    // Runs on the console caller, never on the UDP worker. Fresh raw stock per edit.
+    // Validation/allocation on the sole console caller; reset queued at a packet boundary.
     void configure_workpiece(const WorkpieceConfig& config);
     // Only one UI caller; completion is at a packet boundary, never mid-packet.
     CommandResult command(Action action, IOCommand io = {});
     void stop();
+    void material_command(MaterialEvent event);
+    MaterialStatus material_status() const { return material_->status(); }
+    std::shared_ptr<const MaterialMeshes> material_meshes() const { return material_->meshes(); }
+    // Diagnostic/test barrier: copy current material on worker, never in UDP.
+    std::shared_ptr<const SparseVoxelVolume> material_snapshot();
 private:
-    struct Pending { Action action; IOCommand io; std::promise<CommandResult> completion; };
+    struct Pending { Action action; IOCommand io; MaterialEvent material; std::promise<CommandResult> completion; };
+    CommandResult submit(std::unique_ptr<Pending> request);
     void run(std::stop_token token);
     StepperNinjaProtocol device_;
     UdpServer server_;
@@ -58,6 +65,7 @@ private:
     SimulationStatus published_;
     std::unique_ptr<Pending> pending_;
     bool finished_{};
+    std::unique_ptr<MaterialWorker> material_;
     std::jthread worker_; // Last: all accessed members exist before it starts.
 };
 } // namespace cnc

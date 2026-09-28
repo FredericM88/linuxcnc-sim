@@ -106,6 +106,7 @@ struct Renderer::Impl {
     glm::mat4 workpiece{1};
     glm::dvec3 scene_min{}, scene_max{};
     ToolDefinition tool;
+    std::shared_ptr<const MaterialMeshes> material;
     Camera camera;
     bool fit_requested{true}, dragging{};
     double previous_x{}, previous_y{}, title_time{};
@@ -127,16 +128,15 @@ struct Renderer::Impl {
         glDrawElements(mode, mesh.count, GL_UNSIGNED_INT, nullptr);
     }
 };
-Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_(std::make_unique<Impl>()) {
+Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool, bool build_mesh) : impl_(std::make_unique<Impl>()) {
     auto& p = *impl_;
-    if (tool.kind != ToolKind::FlatEndMill || !std::isfinite(tool.diameter_mm) || !std::isfinite(tool.length_mm) ||
-        tool.diameter_mm <= 0 || tool.length_mm <= 0) throw std::invalid_argument("Phase 4A requires a finite positive flat end mill");
+    validate_tool(tool);
     p.tool = tool;
     validate_workpiece_volume(volume);
     if (!glfwInit()) throw std::runtime_error(glfw_error("GLFW initialization failed"));
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    p.window = glfwCreateWindow(1100, 760, "CNC Simulator - Phase 4A", nullptr, nullptr);
+    p.window = glfwCreateWindow(1100, 760, "CNC Simulator - Phase 5", nullptr, nullptr);
     if (!p.window) throw std::runtime_error(glfw_error("OpenGL 3.3 core window creation failed"));
     glfwMakeContextCurrent(p.window);
     glfwSwapInterval(1);
@@ -159,7 +159,7 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
     p.color_location = glGetUniformLocation(p.program, "color"); p.unlit_location = glGetUniformLocation(p.program, "unlit");
     glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
     p.tool_mesh = std::make_unique<GpuMesh>(cylinder(tool));
-    set_workpiece(volume);
+    set_workpiece(volume, build_mesh);
     glfwSetWindowUserPointer(p.window, &p);
     glfwSetScrollCallback(p.window, [](GLFWwindow* window, double, double dy) {
         static_cast<Impl*>(glfwGetWindowUserPointer(window))->camera.zoom(dy);
@@ -169,10 +169,11 @@ Renderer::Renderer(const SparseVoxelVolume& volume, ToolDefinition tool) : impl_
             static_cast<Impl*>(glfwGetWindowUserPointer(window))->fit_requested = true;
     });
 }
-void Renderer::set_workpiece(const SparseVoxelVolume& volume) {
+void Renderer::set_workpiece(const SparseVoxelVolume& volume, bool build_mesh) {
     validate_workpiece_volume(volume);
     auto& p = *impl_;
     const auto last = volume.last_chunk();
+    p.material.reset();
     p.stock.clear(); // Full invalidation also removes chunks absent in the new volume.
     p.workpiece = glm::mat4(volume.config().workpiece.matrix());
     p.scene_min = glm::dvec3(0); p.scene_max = glm::dvec3(0);
@@ -199,10 +200,10 @@ void Renderer::set_workpiece(const SparseVoxelVolume& volume) {
     p.axes = std::make_unique<GpuMesh>(axes);
     p.scene_max = glm::max(p.scene_max, glm::dvec3(axis_length));
     SurfaceMesher mesher;
-    // CPU extraction and GPU upload are separate operations, both outside the
-    // UDP worker/mailbox. Every published revision defines fresh raw stock.
+    // Synchronous compatibility path for standalone scene callers/tests.
+    // Production receives CPU meshes from MaterialWorker and passes build_mesh=false.
     DirtyChunks dirty;
-    for (std::int64_t zc = 0; zc <= last.z; ++zc) for (std::int64_t yc = 0; yc <= last.y; ++yc) for (std::int64_t xc = 0; xc <= last.x; ++xc)
+    for (std::int64_t zc = 0; build_mesh && zc <= last.z; ++zc) for (std::int64_t yc = 0; yc <= last.y; ++yc) for (std::int64_t xc = 0; xc <= last.x; ++xc)
         dirty.mark({xc,yc,zc});
     for (const auto coord : dirty.take()) {
         auto mesh = mesher.build(volume, coord);
@@ -212,6 +213,25 @@ void Renderer::set_workpiece(const SparseVoxelVolume& volume) {
     }
     if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL scene upload failed");
     p.fit_requested = true;
+}
+void Renderer::apply_material(std::shared_ptr<const MaterialMeshes> meshes) {
+    if (!meshes || meshes == impl_->material) return;
+    auto& p = *impl_;
+    if (!p.material || p.material->generation != meshes->generation)
+        set_workpiece(*meshes->workpiece->volume, false);
+    if (p.tool != meshes->tool) {
+        p.tool_mesh = std::make_unique<GpuMesh>(cylinder(meshes->tool)); p.tool = meshes->tool;
+    }
+    for (const auto& [c, mesh] : meshes->chunks) {
+        if (p.material) {
+            const auto old = p.material->chunks.find(c);
+            if (old != p.material->chunks.end() && old->second == mesh) continue;
+        }
+        if (mesh->indices.empty()) p.stock.erase(c);
+        else p.stock[c] = std::make_unique<GpuMesh>(*mesh);
+    }
+    p.material = std::move(meshes);
+    if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL material upload failed");
 }
 Renderer::~Renderer() = default;
 bool Renderer::draw(const MachineSnapshot& snapshot) {
@@ -254,7 +274,7 @@ bool Renderer::draw(const MachineSnapshot& snapshot) {
     if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL draw failed");
     if (glfwGetTime() - p.title_time >= 0.2) {
         std::ostringstream title; title.setf(std::ios::fixed); title.precision(3);
-        title << "CNC Phase 4A | X " << pose.tip_mm.x << " Y " << pose.tip_mm.y << " Z " << pose.tip_mm.z
+        title << "CNC Phase 5 | X " << pose.tip_mm.x << " Y " << pose.tip_mm.y << " Z " << pose.tip_mm.z
               << " mm | XYZ=RGB | LMB orbit / MMB pan / wheel zoom / Home fit";
         glfwSetWindowTitle(p.window, title.str().c_str()); p.title_time = glfwGetTime();
     }

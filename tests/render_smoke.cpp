@@ -57,6 +57,35 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(std::string("runtime rebuild not visible: ") + command);
             pixels = std::move(next);
         }
+        // Phase 5: immutable worker-style publications visibly cut, persist and reset.
+        auto raw = std::make_shared<cnc::WorkpieceSnapshot>();
+        raw->volume = cnc::build_workpiece(cnc::WorkpieceConfig{});
+        cnc::MaterialRemoval cutting(*raw->volume);
+        auto publication = std::make_shared<cnc::MaterialMeshes>();
+        publication->workpiece = raw; publication->generation = 1;
+        cutting.dirty_all();
+        for (auto c : cutting.dirty().take())
+            publication->chunks[c] = std::make_shared<const cnc::ChunkMesh>(cnc::SurfaceMesher{}.build(cutting.volume(),c));
+        renderer.apply_material(publication);
+        renderer.draw(snapshot);
+        auto capture = [&] {
+            std::vector<unsigned char> result(pixels.size());
+            glReadPixels(0,0,viewport[2],viewport[3],GL_RGBA,GL_UNSIGNED_BYTE,result.data()); return result;
+        };
+        const auto uncut = capture();
+        cutting.sweep({5,20,-5},{45,20,-5},{cnc::ToolKind::FlatEndMill,10,20});
+        auto cut = std::make_shared<cnc::MaterialMeshes>(*publication); ++cut->revision;
+        for (auto c : cutting.dirty().take())
+            cut->chunks[c] = std::make_shared<const cnc::ChunkMesh>(cnc::SurfaceMesher{}.build(cutting.volume(),c));
+        renderer.apply_material(cut); renderer.draw(snapshot);
+        const auto milled = capture(); std::size_t difference = 0;
+        for (std::size_t i=0;i<uncut.size();++i) difference += uncut[i]!=milled[i];
+        if (difference < 1000) throw std::runtime_error("material cut not visible in framebuffer");
+        renderer.apply_material(cut); renderer.draw(snapshot);
+        if (capture()!=milled) throw std::runtime_error("material cut did not persist");
+        auto reset = std::make_shared<cnc::MaterialMeshes>(*publication); reset->generation = 2;
+        renderer.apply_material(reset); renderer.draw(snapshot);
+        if (capture()!=uncut) throw std::runtime_error("material reset did not restore framebuffer");
         renderer.present();
         cnc::Camera camera;
         camera.fit({-10,-10,-10},{50,50,40},1.5);
@@ -65,7 +94,7 @@ int main(int argc, char** argv) {
         camera.pan(30,20,760); const auto c = camera.view_projection(1.5);
         camera.zoom(2); const auto d = camera.view_projection(1.5);
         if (a == b || b == c || c == d) throw std::runtime_error("camera operation ineffective");
-        std::cout << "PASS: stock/tool pixels, authoritative-pose movement, runtime position/origin/size/voxel/reset, camera and GL errors\n";
+        std::cout << "PASS: stock/tool pixels, authoritative-pose movement, runtime position/origin/size/voxel/reset, camera, material cut/persistence/reset and GL errors\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

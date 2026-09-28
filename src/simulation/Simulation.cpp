@@ -24,12 +24,14 @@ Simulation::Simulation(const std::string& address, std::uint16_t port, Scales sc
     } else configure_workpiece(WorkpieceConfig{});
     for (const auto& command : initial_io) sensors_.execute(command, device_.machine().positions());
     published_.io = sensors_.status();
+    material_ = std::make_unique<MaterialWorker>(workpiece_snapshot());
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
 }
 Simulation::~Simulation() { stop(); }
 void Simulation::stop() {
     worker_.request_stop();
     if (worker_.joinable()) worker_.join();
+    if (material_) material_->finish();
 }
 SimulationStatus Simulation::status() const {
     std::lock_guard lock(mailbox_);
@@ -48,10 +50,15 @@ void Simulation::configure_workpiece(const WorkpieceConfig& config) {
     auto next = std::make_shared<WorkpieceSnapshot>();
     next->config = config;
     next->volume = build_workpiece(config);
+    const auto current = workpiece_snapshot();
+    next->revision = current ? current->revision + 1 : 1;
+    if (material_) {
+        MaterialEvent event; event.kind = MaterialEventKind::Workpiece; event.workpiece = next;
+        material_command(std::move(event));
+    }
     std::shared_ptr<const WorkpieceSnapshot> published = next;
     {
         std::lock_guard lock(workpiece_mutex_);
-        next->revision = workpiece_ ? workpiece_->revision + 1 : 1;
         workpiece_.swap(published);
     }
 }
@@ -59,6 +66,22 @@ CommandResult Simulation::command(Action action, IOCommand io) {
     auto request = std::make_unique<Pending>();
     request->action = action;
     request->io = io;
+    return submit(std::move(request));
+}
+void Simulation::material_command(MaterialEvent event) {
+    if (event.kind == MaterialEventKind::Tool) validate_tool(event.tool);
+    auto request = std::make_unique<Pending>();
+    request->action = Action::Material; request->material = std::move(event);
+    submit(std::move(request));
+}
+std::shared_ptr<const SparseVoxelVolume> Simulation::material_snapshot() {
+    MaterialEvent event; event.kind = MaterialEventKind::Capture;
+    event.capture = std::make_shared<std::promise<std::shared_ptr<const SparseVoxelVolume>>>();
+    auto future = event.capture->get_future();
+    material_command(std::move(event));
+    return future.get();
+}
+CommandResult Simulation::submit(std::unique_ptr<Pending> request) {
     auto result = request->completion.get_future();
     {
         std::lock_guard lock(mailbox_);
@@ -90,6 +113,7 @@ void Simulation::run(std::stop_token token) {
     };
     try {
         while (!token.stop_requested()) {
+            if (material_->failed()) throw std::runtime_error("material worker failed; simulation incomplete (see material diagnostics)");
             std::unique_ptr<Pending> request;
             {
                 std::lock_guard lock(mailbox_);
@@ -116,6 +140,12 @@ void Simulation::run(std::stop_token token) {
                         result.message = "Recording snapshot ready.";
                         break;
                     case Action::Status: result.message = "Status updated."; break;
+                    case Action::Material:
+                        request->material.to = tool_pose({device_.machine().positions(), scales_, 0}).tip_mm;
+                        request->material.time = Clock::now();
+                        material_->enqueue(std::move(request->material));
+                        result.message = "Material event queued.";
+                        break;
                     case Action::IO:
                         sensors_.execute(request->io, device_.machine().positions());
                         result.io = sensors_.status();
@@ -123,7 +153,10 @@ void Simulation::run(std::stop_token token) {
                     }
                     publish();
                     request->completion.set_value(std::move(result));
-                } catch (...) { request->completion.set_exception(std::current_exception()); }
+                } catch (...) {
+                    request->completion.set_exception(std::current_exception());
+                    if (request->action == Action::Material) throw;
+                }
             }
             auto datagram = server_.receive(10);
             const auto now = elapsed();
@@ -131,6 +164,13 @@ void Simulation::run(std::stop_token token) {
                 const auto previous = device_.machine().positions();
                 const auto accepted = device_.accept({datagram->bytes.data(), datagram->size}, now);
                 if (accepted) {
+                    const auto current = device_.machine().positions();
+                    if (previous[0] != current[0] || previous[1] != current[1] || previous[2] != current[2]) {
+                        MaterialEvent event;
+                        event.from = tool_pose({previous, scales_, 0}).tip_mm;
+                        event.to = tool_pose({current, scales_, 0}).tip_mm;
+                        material_->enqueue(std::move(event));
+                    }
                     sensors_.update(previous, device_.machine().positions());
                     const auto response = StepperNinjaProtocol::make_response(*accepted, sensors_.inputs());
                     if (server_.send(response, datagram->sender)) ++state.sent;
