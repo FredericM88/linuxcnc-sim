@@ -1,10 +1,40 @@
 # Phase 5 design
 
-## Performance review of 34fd135
+## Final Phase 5 status
+
+**Phase 5 is complete. REAL LINUXCNC ACCEPTANCE = PASSED.** The operator confirmed
+the real plunge/half-circle/full-circle run after the automated sweep-batch tests
+of `b0ee001`. The [acceptance record](phase5-test.md#real-linuxcnc-acceptance--passed)
+contains the configuration, exact commands, reported counters and visual findings.
+The full circle retained 6486 segments with queue maximum 4, zero final worker lag
+and no observed groove catch-up. This closure records the result without changing
+any production algorithm or frozen reference.
+
+Phase 5 provides:
+
+- Persistent sparse voxel material and continuous swept flat-end material removal.
+- Ordered, lossless motion processing, exact collinear coalescing and event-time
+  sweep batching, retaining every original/exactly-coalesced segment.
+- Chunk/voxel spatial prefiltering and first-hit evaluation of the logical union.
+- Asynchronous dirty-chunk meshing and immutable, consistent mesh publication.
+- Passed real LinuxCNC acceptance and frozen automated curved-motion reference tests.
+- Passed full Graphics Release (61/61), Headless Release (58/58), ASan/UBSan (58/58)
+  and TSan (58/58) suites, plus vendor/protocol integrity, as recorded for `b0ee001`.
+
+Known limits remain: no hard real-time guarantee; very large or spatially distributed
+sweeps can still be expensive; binary voxel surface resolution is limited by voxel
+size; only the current flat-end cutting model is implemented. Material mutation
+intentionally remains single-owner/single-threaded. Material-aware probing,
+toolsetter and collision simulation are future phases; the existing Phase-3
+virtual probe-plane/IO support is unchanged. Acceptance applies to the tested
+workload and does not establish a bound for arbitrary motion streams.
+
+## Historical performance review of 34fd135
 
 The clean baseline was `34fd1359701b58b02fac77110650945e06e31a05`.
 No AGENTS.md applies. The real run proved geometric correctness (296560 removed
-voxels), but **real Phase-5 acceptance remains NOT YET PASSED** because of backlog.
+voxels), but real Phase-5 acceptance was still pending at that stage because of
+backlog. The later successful sweep-batch acceptance is recorded above.
 The supplied observations were checked against all material, volume, mesher,
 renderer, transform, tool, simulation, queue, CLI and test code before editing.
 

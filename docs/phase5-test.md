@@ -1,9 +1,125 @@
 # Phase 5 validation and LinuxCNC acceptance
 
-Real LinuxCNC Phase-5 acceptance: **NOT YET PASSED**.
-The first real run proved geometric correctness and lossless eventual processing,
-but failed the desired progressive performance. Automated optimization checks
-below do not grant real acceptance. The same test must be repeated manually.
+**REAL LINUXCNC ACCEPTANCE = PASSED. Phase 5 is complete.**
+The operator confirmed successful real LinuxCNC acceptance after the automated
+sweep-batch tests of `b0ee0018aec240fbd406ace44d9a23150a4a0fbb`.
+The following results are operator-supplied observations, documented on 2026-09-29.
+They supersede the earlier pending acceptance caused by visible material backlog.
+Historical measurements and the frozen synthetic references remain unchanged.
+
+## Real LinuxCNC acceptance — PASSED
+
+### Configuration and preparation
+
+LinuxCNC used the original Stepper-Ninja HAL path; the simulator acted as virtual
+Stepper-Ninja hardware. X/Y/Z were configured at **400 steps/mm**. There was
+**one material worker**, **four meshworkers**, and a **20-ms material batch interval**.
+
+| Setting | Value |
+|---|---|
+| Workpiece size | 30 x 20 x 10 mm |
+| Workpiece position | X15 Y10 Z-10 |
+| Workpiece origin | center center max, offset (15,10,10) mm |
+| Resulting machine bounds | X0..30, Y0..20, Z-20..-10 mm |
+| Voxel size | 0.10 mm |
+| Tool | Flat-end, diameter 6 mm, cutting length 20 mm |
+| Start before cutting | G53 machine position X15 Y4 Z-5 |
+
+Material was reset and enabled before the plunge. The counters below are
+cumulative checkpoints of the same run: plunge, then first half circle, then
+complete circle. A dash means that metric was not supplied for that checkpoint.
+
+### Commands and final positions
+
+**Test 1 — plunge**, from X15 Y4 Z-5:
+
+```gcode
+G53 G1 Z-12 F120
+```
+
+Final machine position: **X15 Y4 Z-12**.
+
+**Test 2 — first half circle**, from X15 Y4 Z-12:
+
+```gcode
+G17
+G2 X5 Y4 I-5 J0 F300
+```
+
+Final machine position: **X5 Y4 Z-12**.
+
+**Test 3 — complete circle**, from X5 Y4 Z-12:
+
+```gcode
+G2 X15 Y4 I5 J0 F300
+```
+
+Final machine position: **X15 Y4 Z-12**. This closes the second half of the same
+radius-5-mm circle centred at **X10 Y4**.
+
+The G2 commands were **not G53 moves**. G53 applies to linear G0/G1 machine-coordinate
+moves. The active work coordinate offsets were zero in this acceptance run, so
+the G2 arcs corresponded to the intended machine-space geometry. The simulator
+continued to consume actual integrated step motion through the original HAL path;
+it did not interpret G-code or reconstruct a circle.
+
+### Reported real measurements
+
+| Metric | Plunge | Plunge + first half circle | Plunge + complete circle |
+|---|---:|---:|---:|
+| Material queue current / maximum | 0 / 3 | 0 / 4 | 0 / 4 |
+| Batches processed | 172 | 334 | 627 |
+| Segments in batches | 172 | 2775 | 6486 |
+| Average segments/batch | 1.000 | 8.308 | 10.344 |
+| Maximum segments/batch | 1 | 21 | 21 |
+| Batch candidate chunks | 828 | — | — |
+| Candidate voxel visits | 2144952 | — | — |
+| Occupied voxel visits | 697016 | — | — |
+| Sweep containment tests | 56560 | 179840 | 333440 |
+| Batch envelope rejects | 640456 | — | — |
+| First-hit exits | 56560 | — | — |
+| Batch processing ms | 67.312 | 293.031 | 642.892 |
+| Sweeps processed | 173 | — | — |
+| Chunks tested | 828 | — | — |
+| Chunks changed | 160 | — | — |
+| Voxels tested | 697016 | — | — |
+| Removed voxels | 56560 | 166440 | 298520 |
+| Removed volume mm3 | 56.560 | 166.440 | 298.520 |
+| Material worker processing ms | 76.752 | 307.169 | 663.909 |
+| Worker lag ms | 0.000 | 0.000 | 0.000 |
+| Stale mesh jobs | 0 | 0 | 0 |
+
+The real plunge count and volume exactly match the frozen synthetic plunge
+reference: **56560 voxels / 56.560 mm3**. The real plunge + first half circle
+removed **166440**, versus **166400** in the synthetic fixture: **40 voxels /
+0.040 mm3** more. This is not a failure: the real LinuxCNC trajectory and the
+synthetic fixture are different motion streams. No bit-identical equivalence
+between those streams is claimed. The unchanged automated tests prove exact
+batch-versus-reference voxel equality for **identical input trajectories**.
+
+### Visual, communication and performance acceptance
+
+The operator reported fluid OpenGL material removal following the cutter without
+the previously visible groove catch-up. The final full circular groove was
+visually continuous, and no visible material-worker backlog remained after either
+arc. Accepted traffic continued normally; no relevant protocol, checksum, send,
+timing, position-overflow or packet-gap errors were observed during acceptance.
+
+Exact collinear coalescing already handles the straight/plunge path efficiently:
+its 172 batches each contain one segment. Curved LinuxCNC motion benefits strongly
+from sweep batching: the full-circle checkpoint processed **6486 retained segments**
+with queue maximum **4**, final worker lag **0.000 ms** and **zero stale mesh jobs**.
+No chord approximation is used. Every original or exactly-coalesced segment remains
+represented in the logical sweep union.
+
+The optimized material worker kept up with the actual LinuxCNC motion stream for
+this tested workload. Together with the frozen automated references and complete
+sanitizer/integrity validation below, this closes Phase 5 as **PASSED**. It is an
+acceptance result for this workload, not a hard-real-time guarantee for arbitrary
+workloads. See the [final Phase 5 status and limits](phase5-design.md#final-phase-5-status).
+
+This closure changes documentation only. No production algorithm, source behaviour,
+frozen reference, vendor, protocol or HAL code was changed to record the acceptance.
 
 ## Batch Sweep Union validation (2026-09-28/29, parent 9e56ffe)
 
@@ -204,7 +320,8 @@ Remaining limits: loose candidate boxes for long/discontinuous paths, worst-case
 candidate-times-segment work, unbounded lossless input backlog, full sparse-volume
 snapshot costs and no hard realtime latency guarantee. The 256-segment cap bounds
 retained geometry per union, not total volume work or memory. Automated success
-does not grant real LinuxCNC acceptance: **NOT YET PASSED**.
+alone does not establish real acceptance; the separate operator-confirmed
+[real run above](#real-linuxcnc-acceptance--passed) supplies that evidence.
 
 ### Reproduction
 
@@ -230,7 +347,7 @@ its own 30-second future wait under instrumentation, with no sanitizer finding.
 That completion guard is now 120 seconds; the independent CTest timeout remains
 180 seconds. No voxel, fingerprint or frozen work-count assertion was changed.
 Benchmarks are measured separately from sanitizer/build workloads; their timings are diagnostics, not pass thresholds.
-The real LinuxCNC performance acceptance remains **NOT YET PASSED**.
+Real LinuxCNC performance acceptance is now **PASSED**, as recorded above.
 
 ## First real run (operator-supplied baseline, before optimization)
 
@@ -272,7 +389,7 @@ exact fingerprint in addition to its existing voxel-derived analytic bound.
 | Vendor integrity | nine pinned SHA-256 files match originals |
 | Protocol, original HAL, UDP, namespace tests | passed; namespace test not skipped |
 | Original stepper-ninja checkout | clean; no protocol/vendor edits |
-| Real LinuxCNC acceptance after optimization | **NOT YET PASSED** |
+| Real LinuxCNC acceptance at this historical stage | Pending then; subsequent sweep-batch real acceptance passed (see above) |
 
 GCC 14.2.0 / C++20, Linux, 14 available logical CPUs; automatic mesh count 4.
 Graphics tests used the available desktop (OpenGL 4.6 Core, Mesa 25.0.7/radeonsi,
@@ -496,7 +613,8 @@ SparseVoxelVolume, mesh scheduling, UDP and protocol code are unchanged.
 Only tests, frozen reference data, CMake test registration and documentation were
 added. There is no sweep union/batching, approximate arc coalescing, new material
 parallelism or analytical circular cut. No future optimization is claimed correct
-or faster. Real Phase-5 acceptance remains **NOT YET PASSED**.
+or faster at that historical baseline stage. Real acceptance was pending then;
+the later sweep-batch acceptance is recorded above as **PASSED**.
 
 ### Fresh-stock geometry and clockwise direction
 
@@ -726,7 +844,7 @@ Final worker lag is zero after drain and is not an in-motion visual latency metr
 | Vendor integrity | nine unchanged original files match pinned SHA-256 |
 | Protocol/HAL/UDP and namespace tests | passed in full suites, no namespace skip |
 | Source integrity against ae13f21 | no changes under `src/`, `third_party/`, `stepper-ninja/` |
-| Real LinuxCNC acceptance | **NOT YET PASSED** |
+| Real LinuxCNC acceptance at the frozen-baseline stage | Pending then; subsequent sweep-batch real acceptance passed (see above) |
 
 
 New CTests cover configuration/fingerprint ordering, plunge, arc plus fixed
@@ -763,7 +881,11 @@ do not replace these ae13f21 fixtures to make a future optimized implementation
 pass. Record candidate output elsewhere and require exact equality with these
 original states. Logs and temporary captures remain ignored under `build-curved/`.
 
-## Repeat real LinuxCNC acceptance — exact procedure
+## Historical straight-groove procedure — optional regression
+
+This earlier X5/Y10 straight-groove procedure is retained for future regression
+checks. The completed real acceptance above used the X15/Y4 plunge and full circle;
+this older procedure is not an outstanding condition for Phase 5 closure.
 
 Use the existing Phase-3 configuration and original installed HAL driver.
 Begin with a newly started simulator so the existing zero-step reference and
@@ -880,7 +1002,8 @@ material show
 
 The original configured stock must reappear, removed voxels return to zero, and
 machine position/tool definition remain unchanged. Capture the observed results
-in a separate real acceptance entry; until the operator confirms a successful repeat retain **NOT YET PASSED**.
+in a separate regression entry. The successful plunge/circle acceptance above
+already closes Phase 5; keep future observations distinct from that accepted run.
 
 After closing LinuxCNC and quitting the simulator:
 

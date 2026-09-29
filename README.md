@@ -14,8 +14,12 @@ zeigte aber einen großen Performance-Rückstand. Die Optimierung fasst exakt
 kollineare Motion zusammen, invalidiert chunkweise und mesht unveränderliche
 Snapshots parallel. Für Kurven sammelt die Batch Sweep Union standardmäßig
 20 ms an Event-Zeitstempeln; alle nicht exakt zusammenfassbaren Segmente bleiben
-erhalten. Der UDP-Pfad bleibt unabhängig. Die reale Abnahme muss mit
-demselben LinuxCNC-Test wiederholt werden: **NOT YET PASSED**.
+erhalten. Der UDP-Pfad bleibt unabhängig. Die reale LinuxCNC-Abnahme nach dieser
+Optimierung ist **PASSED**: Plunge und vollständige Kreisnut wurden flüssig ohne
+sichtbares Nachholen abgetragen; Queue-Maximum 4, abschließender Worker-Lag 0.
+Das [reale Abnahmeprotokoll](docs/phase5-test.md#real-linuxcnc-acceptance--passed)
+dokumentiert die vom Bediener bestätigten Ergebnisse und die Abgrenzung zur
+synthetischen Referenz.
 
 `--material-batch-ms N` setzt das Materialfenster: Standard 20 ms, ganze Zahlen
 1..1000; 0 aktiviert den bisherigen segmentweisen Referenzpfad. Steuerbefehle
@@ -35,7 +39,7 @@ werden derzeit abgewiesen. Messwerte, Snapshot-Semantik und Grenzen stehen in
 | Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
 | Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | automatisiert getestet; OpenGL-/G53-Pfad im Rahmen der realen 4A.1-Abnahme bestätigt |
 | Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | automatisiert getestet und am 2026-09-27 real/interaktiv mit LinuxCNC 2.9.10 erfolgreich abgenommen |
-| Phase 5: kontinuierlicher Voxel-Materialabtrag | implementiert und automatisiert getestet; reale LinuxCNC-Abnahme: **NOT YET PASSED** |
+| Phase 5: kontinuierlicher Voxel-Materialabtrag | **abgeschlossen**; automatisiert und real mit LinuxCNC abgenommen: **PASSED** |
 
 Die reale Phase-4A.1-Abnahme wurde vom Benutzer bestätigt: Runtime-Geometrie,
 Origins, Platzierung und G53-Werkzeugposition stimmten mit LinuxCNC 2.9.10
@@ -159,7 +163,7 @@ Echtzeitgarantie des Betriebssystems oder Speicherallokators.
 Die Voxelzentrenregel ist binär (255 -> 0), auflösungsabhängig und nicht CAD-exakt.
 Keine Kollisionen, Schnittkräfte, A-Achsen-Rotation oder automatische G54/G55-
 Verarbeitung. Mathematik und Grenzen: [Phase-5-Design](docs/phase5-design.md).
-Build-/Testergebnisse und **exakte Befehle für die noch ausstehende reale Abnahme**:
+Build-/Testergebnisse und **bestandene reale LinuxCNC-Abnahme samt Befehlen**:
 [Phase-5-Tests](docs/phase5-test.md).
 
 ## Werkstück zur Laufzeit konfigurieren (Phase 4A.1)

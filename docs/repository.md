@@ -123,7 +123,10 @@ Die Spezifikation bleibt als bereitgestellte Quelldatei erhalten.
 [phase5-design.md](phase5-design.md) dokumentiert Analyseplan, Mathematik,
 Threading, Queue, Invalidation, Reset und Grenzen.
 [phase5-test.md](phase5-test.md) enthält Build-/Testergebnisse und die manuelle
-LinuxCNC-Abnahmefolge. Reale Phase-5-Abnahme: **NOT YET PASSED**.
+LinuxCNC-Abnahme. **Phase 5 ist abgeschlossen; reale Abnahme: PASSED.** Der vom
+Bediener bestätigte Plunge-/Kreislauf mit 20-ms-Batches blieb flüssig, mit
+Queue-Maximum 4 und abschließendem Worker-Lag 0. Die dort dokumentierten
+synthetischen Referenzen und vollständigen Sanitizer-/TSan-Suiten bleiben gültig.
 Builds, Testlogs und Sanitizer-Artefakte bleiben in ignorierten `build*`-Verzeichnissen.
 Vendor-Dateien und Protokollquellen wurden nicht verändert.
 
