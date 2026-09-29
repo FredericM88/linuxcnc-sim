@@ -12,9 +12,16 @@ from udp_integration import exchange
 binary = str(pathlib.Path(sys.argv[1]).resolve())
 render = sys.argv[2:] == ["--render"]
 for flag, value in [("--material-workers", "0"), ("--material-workers", "2"),
-                    ("--mesh-workers", "33"), ("--mesh-workers", "-1")]:
+                    ("--mesh-workers", "33"), ("--mesh-workers", "-1"),
+                    ("--material-batch-ms", "1001"), ("--material-batch-ms", "-1"),
+                    ("--material-batch-ms", "1.5"), ("--material-batch-ms", "nan")]:
     rejected = subprocess.run([binary, flag, value], capture_output=True, text=True, timeout=5)
     assert rejected.returncode == 1 and "cnc-sim:" in rejected.stderr, rejected
+for interval in [0, 1000]:
+    valid = subprocess.run([binary, "--bind", "127.0.0.1", "--port", "0", "--no-stats",
+                            "--stock-size", "1,1,1", "--material-batch-ms", str(interval)],
+                           input="quit\n", capture_output=True, text=True, timeout=15)
+    assert valid.returncode == 0 and f"Material batch interval: {interval} ms" in valid.stdout, valid
 with tempfile.TemporaryFile(mode="w+") as log:
     process = subprocess.Popen([binary, "--bind", "127.0.0.1", "--port", "0", "--no-stats",
                                 "--steps-per-unit", "400,400,400,400", "--stock-size", "30,10,4",
@@ -66,6 +73,7 @@ with tempfile.TemporaryFile(mode="w+") as log:
         sweeps = int(re.search(r"Sweeps processed: (\d+)", final)[1])
         assert 1 < sweeps < 250, text
         assert "Motion events received: 1000" in final, text
+        assert "Material batch interval: 20 ms" in final and "Batches processed:" in final, text
         assert "Dirty mesh chunks: 0" in final and "Worker lag: 0.000" in final, text
         assert "X  4000 steps  10.0000 mm" in final and text.count("Error:") == 3, text
         # Independent capsule cross-section centre count; z = [0,2] gives 20 layers.

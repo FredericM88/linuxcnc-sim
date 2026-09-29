@@ -117,6 +117,21 @@ bool SparseVoxelVolume::erase(VoxelCoord p) {
     }
     return true;
 }
+std::uint32_t SparseVoxelVolume::erase_chunk_voxels(ChunkCoord c, std::span<const std::uint32_t> indices) {
+    const auto n=config_.volume.chunk_size, count=n*n*n;
+    for (auto index : indices) if (index>=count) throw std::out_of_range("chunk voxel index out of range");
+    if (indices.empty() || chunk_state(c)==ChunkState::Empty) return 0;
+    materialize_chunk(c);
+    auto& chunk=chunks_.at(c);
+    if (chunk.state==ChunkState::Solid) {
+        chunk.values.assign(count,255); chunk.state=ChunkState::Mixed;
+    }
+    std::uint32_t removed=0;
+    for (auto index : indices) if (chunk.values[index]==255) { chunk.values[index]=0; ++removed; }
+    chunk.occupied-=removed; chunk.version+=removed; version_+=removed; removed_+=removed;
+    if (!chunk.occupied) { chunk.state=ChunkState::Empty; std::vector<VoxelValue>().swap(chunk.values); }
+    return removed;
+}
 std::uint64_t SparseVoxelVolume::chunk_version(ChunkCoord c) const {
     const auto it = chunks_.find(c);
     return it == chunks_.end() ? 0 : it->second.version;

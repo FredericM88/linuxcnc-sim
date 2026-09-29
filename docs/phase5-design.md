@@ -46,7 +46,9 @@ Original UDP -> StepperNinjaProtocol::accept -> int64 MachineState
                   v
              SPSC MotionQueue<MaterialEvent>
                   v
-             exact coalescer (20 ms target collection window)
+             unchanged exact coalescer, bounded by event-time windows
+                  v
+             sweep union (default 20 ms, all curved segments retained)
                   v
              MaterialWorker (one authoritative owner, headless too)
                   -> MaterialRemoval -> SparseVoxelVolume -> DirtyChunks
@@ -96,14 +98,14 @@ travel. Command replies say **queued**: they acknowledge the packet boundary,
 not completion of expensive worker processing. `material show` shows the processed
 state; wait for ON/OFF and a drained queue when performing interactive acceptance.
 
-The consumer drains up to 65536 input events or approximately 20 ms per pass.
-An accumulated motion is flushed on a nonmergeable segment, any control/capture
-barrier, shutdown, or after a 20 ms collection window. The window is measured from
-its first dequeue; it does not restart when more segments arrive. Deadline checks
-run once per consumer pass, so this is a target, not a strict latency bound. A sweep is still
-indivisible and may exceed that budget. This also coalesces a live 1 kHz stream
-instead of only an already accumulated backlog. At shutdown every segment is
-flushed. There is no producer-side timer or extra producer synchronization.
+The consumer drains up to 65536 input events or approximately 20 ms processing
+per pass. This scheduling slice is independent of the material window. With the
+default `--material-batch-ms 20`, windows use `MaterialEvent::time`, the existing
+steady-clock timestamp created by the producer. They do not use dequeue time,
+worker sleep duration, or reconstructed servo/G-code time. See the union section
+below for exact boundaries. With `--material-batch-ms 0`, the former segmentwise
+path remains available, including its old 20-ms-from-first-dequeue coalescer
+flush. There is no producer-side timer or extra producer synchronization.
 
 Mesh completion is polled without waiting. During mesh jobs, the owner continues
 motion consumption and records new dirty chunks. It sleeps 1 ms if no input was
@@ -150,10 +152,118 @@ Finite memory cannot hold unlimited overload. Allocation/publication failure or
 a geometry/worker exception is a **fatal, visibly incomplete simulation**, not a
 successful result with missing cuts. UDP stops accepting further work when the
 worker's atomic failure flag is observed; process exit is nonzero. Pending capture
-promises are failed during teardown. Recovery is a new simulation run; there is
+promises are failed during teardown, including a Capture already dequeued when
+its preceding union fails. The consumer retains that active promise until the
+barrier succeeds; a producer-held promise therefore cannot leave a blocked future. Recovery is a new simulation run; there is
 no bounded overflow policy, disk spool or automatic recovery that could hide a
 missing segment. The failure test exercises this explicit path using an
 out-of-range material pose; it does not claim to exhaust system RAM.
+
+## Batch Sweep Union (from frozen curved baseline 9e56ffe)
+
+The former path evaluates each sweep against currently occupied voxels and applies
+`M := M \ Si` immediately. The new path retains the complete sequence of sweep
+endpoints, evaluates membership in `U = S0 union ... union Sn`, and applies
+`M := M \ U`. At each voxel centre, removal is the logical OR of the **same**
+analytic predicate over those segments. Set difference distributes over that
+union: `M \ (S0 union ... union Sn) = (...((M \ S0) \ S1)...) \ Sn`.
+Because removal only changes 255 to 0, order and repeated hits cannot change the
+final occupancy. No curve is replaced by its endpoints. The exact coalescer's
+proof and the `long double` narrow predicate remain unchanged.
+
+### Source-time windows and controls
+
+`--material-batch-ms N` accepts integer 0..1000, default **20**. Zero explicitly
+selects the old segmentwise worker. For N>0, the first motion opens the half-open
+interval `[first_event.time, first_event.time + N ms)`. Each input segment belongs
+whole to its endpoint event's timestamp; no segment is interpolated or split at
+a time boundary. An event exactly at the deadline closes the previous window and
+starts the next. Window checks precede the exact coalescing predicate, so a merged
+straight segment cannot span two windows. This may slightly increase the number
+of exact coalescer outputs without changing their swept set.
+
+A backwards event timestamp also closes the preceding window. At most **256
+coalesced segments** are retained per union (plus one pending coalescer endpoint
+pair); reaching that limit closes a batch without dropping or approximating any
+segment. This bounds retained geometry even when many events have the same time.
+Empty/OFF windows do not count as processed unions.
+
+Every Enable (even repeated), Disable, Tool, Reset, Workpiece and Capture event
+first flushes the coalescer and then applies the union with the **old** tool and
+generation. Only then does the control execute. Reset/Workpiece replace the
+engine and counters and advance generation; no pending old geometry can leak
+into the replacement volume. Enable and Tool retain their single static stamps.
+Capture is an explicit immediate flush and returns the exact processed prefix.
+Shutdown drains all queued controls/motions, flushes any last short window even
+if its deadline is in the future, then drains all dirty and mesh work.
+
+An empty FIFO between live 1-kHz samples does not prematurely split a window.
+If the FIFO remains empty, the owner flushes once the **source-time deadline** is
+reached. Thus stopped/short movement is committed without another motion/control;
+old backlogged timestamps flush immediately after drain. The existing 1-ms poll
+only wakes the owner; it does not determine the partition. A window is a target
+latency, not a realtime upper bound: a large indivisible union, snapshot or OS
+scheduling delay can extend it. Queue depth alone excludes retained geometry;
+use Capture for a barrier, or wait for queue/dirty/lag to reach zero.
+
+### Union data and conservative spatial rejection
+
+`vector<SweepSegment>` retains every non-coalescible edge. Preparation computes
+the former conservative transformed/clipped voxel AABB for each segment. A
+`unordered_map<ChunkCoord, Candidates>` contains only intersecting chunks, each
+with segment indices, a union voxel box and an enclosing **tip endpoint box**.
+This is a transient membership acceleration structure, not a polygonal union or
+new volume representation. Different chunk iteration orders have the same final
+occupancy and numeric versions.
+
+Within each nonempty candidate chunk, traverse the clipped union box once and
+sample each voxel once. Empty cells are skipped. Transform an occupied centre to
+machine coordinates once. Every possible tool tip of every relevant segment
+lies in the chunk's endpoint box; therefore XY distance to that box greater than
+`radius + pad`, or Z outside `[min_tip_z-pad, max_tip_z+length+pad]`, proves a miss
+for all those segments. This inexpensive radial envelope rejects the shared
+outside-circle corners that AABBs alone would repeatedly test. Remaining centres
+are filtered by each segment's own voxel bounds and radial/Z envelope before
+calling the original analytic containment predicate. The outward pad is the same
+`4e + 64*DBL_EPSILON*M` scale guard used by broad phase; it only adds candidates,
+never enlarges actual cutting geometry. Rotated stock is handled in machine space.
+
+The first analytic hit records a local x-fast voxel index and breaks the segment
+loop. A reusable hit vector and six-bit boundary mask collect each chunk's changes.
+`erase_chunk_voxels` materializes that chunk once, clears all unique hits, and
+updates occupancy, removed count, chunk/global versions once with the removed
+count. Versions still numerically count **removed voxels**, retaining old version
+semantics and final values; only metadata writes are grouped. Empty chunks still
+release their arrays. Own/affected face-neighbour dirty marks happen once per
+chunk/union. No snapshots, controls or other threads observe a partial union.
+
+### Diagnostics and limits
+
+Existing sweep counts count logical segments plus static stamps, not union calls.
+`voxels tested` counts occupied centres visited (once per chunk/union in the new
+path); `containment tests` counts actual analytic predicate calls, including any
+static stamps. Batch diagnostics report calls, coalesced segments, average/maximum
+segments, candidate chunks, candidate voxel visits including empty cells, occupied
+candidates, chunk-segment references, analytic tests, envelope rejects, skipped
+prefilter references, first-hit exits and remaining references skipped after a hit.
+Batch processing time includes preparation, membership, mutation and invalidation.
+All these removal statistics reset with the material generation.
+
+Skipped references describe work avoided against a hypothetical blind union loop;
+they are **not** an exact counterfactual saving against the old sequential engine
+(which itself skips already removed cells). Compare measured old/new analytic
+call counts to quantify that reduction. Candidate voxels and occupied visits are
+also different quantities; neither implies one predicate call per retained segment.
+
+One authoritative mutation thread, FIFO, UDP handling, meshing pool, immutable
+snapshots, seven-version validation and renderer are unchanged. Batch mutation
+can reduce stale intermediate mesh jobs as a consequence, but adds no mesh timer
+or debouncing. Worst-case membership is still candidates times relevant segments;
+large/discontinuous paths may produce loose union boxes and many chunk references.
+The 256-segment cap does not bound voxel count, total motion backlog or latency.
+There is no approximate coalescing, reconstructed arc, SIMD implementation or
+parallel volume mutation. Measurements and the unchanged frozen voxel oracles
+are recorded in [phase5-test.md](phase5-test.md).
 
 ## Tool and exact continuous sweep predicate
 
@@ -243,7 +353,8 @@ needed by SurfaceMesher. The existing face-area and X/Y/Z boundary tests remain.
 
 ### Snapshot, versions and publication
 
-A consistent material state is the owner's completed sweep/control-event prefix.
+A consistent material state is the owner's completed union/control-event prefix
+(or completed sweep prefix in segmentwise mode).
 At scheduling, it deep-copies the sparse material volume once for an entire dirty
 batch. Mesh threads read only this immutable copy, including implicit stock and
 all neighbour samples. They never access mutable engine data. Snapshot time is

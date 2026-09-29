@@ -19,10 +19,12 @@ struct MaterialMeshes {
 struct MaterialWorkerConfig {
     unsigned material_workers{1};
     unsigned mesh_workers{}; // 0: automatic, reserve two logical CPUs, cap at four.
+    unsigned material_batch_ms{20}; // 0: segmentwise reference; otherwise event-time windows, 1..1000 ms.
 };
 MaterialWorkerConfig resolve_material_workers(MaterialWorkerConfig config);
 struct MaterialStatus {
     unsigned material_workers{1}, mesh_workers{1}, mesh_parallel_max{};
+    unsigned material_batch_ms{20};
     RemovalStats removal;
     ToolDefinition tool;
     bool enabled{};

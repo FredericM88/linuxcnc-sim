@@ -74,7 +74,16 @@ void print_removal(const RemovalStats& s) {
              <<" voxels_tested="<<s.voxels_tested<<" removed="<<s.voxels_removed
              <<" volume_mm3="<<static_cast<double>(s.voxels_removed)*.001
              <<" broad_ms="<<s.broad_ms<<" narrow_ms="<<s.narrow_ms
-             <<" mutation_ms="<<s.mutation_ms<<" invalidation_ms="<<s.invalidation_ms;
+             <<" mutation_ms="<<s.mutation_ms<<" invalidation_ms="<<s.invalidation_ms
+             <<" containment_tests="<<s.containment_tests
+             <<" batches="<<s.batch.batches<<" batch_segments="<<s.batch.segments
+             <<" avg_segments="<<(s.batch.batches ? static_cast<double>(s.batch.segments)/static_cast<double>(s.batch.batches) : 0)
+             <<" max_segments="<<s.batch.max_segments<<" candidate_chunks="<<s.batch.candidate_chunks
+             <<" candidate_voxels="<<s.batch.candidate_voxels<<" occupied_candidates="<<s.batch.occupied_candidates
+             <<" chunk_segment_refs="<<s.batch.chunk_segment_refs<<" batch_containment_tests="<<s.batch.containment_tests
+             <<" envelope_rejects="<<s.batch.envelope_rejects<<" prefilter_skipped_refs="<<s.batch.prefilter_rejected_refs
+             <<" first_hit_exits="<<s.batch.first_hit_exits<<" first_hit_skipped_refs="<<s.batch.first_hit_skipped_refs
+             <<" batch_ms="<<s.batch.processing_ms;
 }
 void check_stats(const std::string& name, const MaterialRemoval& cut) {
     std::ifstream in(fixtures/"serial.stats"); std::string magic;
@@ -121,10 +130,10 @@ void configuration(const Path& path) {
              <<" delivery_duration_ms="<<path.samples.back().tick<<" min_y_mm=-1\n";
 }
 struct Run { std::shared_ptr<const SparseVoxelVolume> volume; MaterialStatus status; double wall_ms{}; };
-Run worker_run(const Path& path, bool arc, bool paced, unsigned workers) {
+Run worker_run(const Path& path, bool arc, bool paced, unsigned workers, unsigned batch_ms=20) {
     const auto raw=stock(); // Fresh raw material for EVERY run, no pre-existing groove.
     const auto start=Clock::now();
-    MaterialWorker worker(raw,{1,workers});
+    MaterialWorker worker(raw,{1,workers,batch_ms});
     MaterialEvent on; on.kind=MaterialEventKind::Enable; on.to=above; worker.enqueue(on);
     MaterialEvent plunge; plunge.from=above; plunge.to=plunged; worker.enqueue(plunge);
     const auto arc_start=Clock::now();
@@ -171,7 +180,7 @@ void print_run(const Path& path, bool arc, bool paced, const Run& run) {
              <<" mesh_batch_bound=280 mesh_pending_bound=280"
              <<" final_lag_ms="<<s.lag_ms<<" wall_ms="<<run.wall_ms
              <<" material_workers="<<s.material_workers<<" mesh_workers="<<s.mesh_workers
-             <<" parallel_peak="<<s.mesh_parallel_max<<" fingerprint="<<fingerprint<<'\n';
+             <<" material_batch_ms="<<s.material_batch_ms<<" parallel_peak="<<s.mesh_parallel_max<<" fingerprint="<<fingerprint<<'\n';
 }
 void record(const Path& path, const std::filesystem::path& directory) {
     // Explicit one-off reference capture; normal tests NEVER overwrite fixtures.
@@ -235,12 +244,13 @@ int main(int argc, char** argv) {
             std::cout<<"arc_chord_differing_voxels="<<differences<<" chord_removed="<<chord->stats().voxels_removed
                      <<" chord_fingerprint="<<VoxelReference::capture(chord->volume()).fingerprint()<<'\n';
         } else if (mode=="benchmark") {
-            CHECK(argc==4 || argc==3); const std::string pacing(argv[2]); CHECK(pacing=="paced" || pacing=="burst");
-            const unsigned workers=argc==4 ? static_cast<unsigned>(std::stoul(argv[3])) : 4;
+            CHECK(argc==5 || argc==4 || argc==3); const std::string pacing(argv[2]); CHECK(pacing=="paced" || pacing=="burst");
+            const unsigned workers=argc>=4 ? static_cast<unsigned>(std::stoul(argv[3])) : 4;
+            const unsigned batch_ms=argc==5 ? static_cast<unsigned>(std::stoul(argv[4])) : 20;
             const bool paced=pacing=="paced";
-            const auto plunge=worker_run(path,false,paced,workers); reference(false).require_equal(*plunge.volume);
+            const auto plunge=worker_run(path,false,paced,workers,batch_ms); reference(false).require_equal(*plunge.volume);
             print_run(path,false,paced,plunge);
-            const auto arc=worker_run(path,true,paced,workers); reference(true).require_equal(*arc.volume);
+            const auto arc=worker_run(path,true,paced,workers,batch_ms); reference(true).require_equal(*arc.volume);
             print_run(path,true,paced,arc);
             const auto delta=arc.status.removal.voxels_removed-plunge.status.removal.voxels_removed;
             std::cout<<"arc_only_delta_removed="<<delta<<" arc_only_delta_mm3="<<static_cast<double>(delta)*.001

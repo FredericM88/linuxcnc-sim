@@ -5,6 +5,233 @@ The first real run proved geometric correctness and lossless eventual processing
 but failed the desired progressive performance. Automated optimization checks
 below do not grant real acceptance. The same test must be repeated manually.
 
+## Batch Sweep Union validation (2026-09-28/29, parent 9e56ffe)
+
+Work began with a clean `git status --short` and verified HEAD
+`9e56ffeeb5725b4c517917ccd525b70a23942272` (`Add curved material removal baseline`).
+The seven-entry log was inspected before changes. The frozen `benchmark paced 4`
+was rerun **before implementation**, followed by all eight existing curved tests:
+8/8 passed in 28.27 s. The measured pre-change worker/queue values were
+3606.683 ms / 429; all six million cells matched the frozen references.
+The old executable was retained in the ignored `build-batch/` directory.
+
+The fixtures `arc.steps`, both RLE references, `serial.stats`, fixture README,
+reference comparator and exact coalescing predicate have no diff against 9e56ffe.
+No reference was regenerated. Existing geometry/work-count assertions are intact;
+the curved test executable only gains additional diagnostics and an optional batch
+interval argument. The original `benchmark paced 4` command still exercises the
+same motion, fresh-stock runs, 1-ms delivery and four meshworkers. Optional fifth
+argument `0` selects the old segmentwise worker for direct comparisons.
+
+### Exact geometry and boundary coverage
+
+Every window-size test compares **each of 6000000 cells**, separately for the
+worker and for the union API with all original edges retained. Worker/canonical
+batch results also have identical final global and per-chunk versions.
+The source timestamps in these deterministic tests are explicit future-dated
+millisecond ticks, followed by an immediate Capture, avoiding scheduling-dependent
+idle splits. They test long motion and boundaries inside the curved path.
+
+| Window ms | Batches | Coalesced segments including plunge | Max segments | Exact result |
+|---:|---:|---:|---:|---|
+| 1 | 3143 | 3143 | 1 | 166400 removed, all cells identical |
+| 5 | 629 | 2683 | 5 | 166400 removed, all cells identical |
+| 10 | 315 | 2629 | 10 | 166400 removed, all cells identical |
+| 20 | 158 | 2600 | 20 | 166400 removed, all cells identical |
+| 50 | 63 | 2587 | 50 | 166400 removed, all cells identical |
+
+All also pass plunge-only: **56560 / 56.560 mm3**, FNV-1a-64
+**95c98093e6e51d52**. Plunge+arc is **166400 / 166.400 mm3**, fingerprint
+**585ccf7e9d0561a2**; arc-only delta **109840 / 109.840 mm3**. Hashes are
+additional diagnostics, never a substitute for cell equality. The unchanged
+frozen serial work counts pass as well.
+
+Additional tests cover the exact **4534-edge** alternative subdivision twice,
+idempotent repeated unions, the frozen **78560** differing cells between arc and
+chord, and the original **296560** straight-groove result. L corners, out-and-back
+motion and a tight curve match sequential subtraction; corner/curve also explicitly
+differ from their endpoint chord. An exhaustive analytic centre oracle covers
+rotated stock, randomized diagonal XYZ paths, large translations (1e11 mm), tangent
+boundaries and partial chunks. X/Y/Z halo-only invalidation, bulk duplicate indices,
+empty compaction, invalid-index rejection before mutation and metadata equality
+are checked independently.
+
+Worker tests exercise 0/19/20-ms endpoint timestamps (an exact half-open boundary),
+backwards timestamps, a repeated timestamp with 600 non-collinear edges (256-edge
+cap), Capture before deadline, OFF with pending geometry/disabled travel, re-enable,
+tool replacement while a previously uncut edge is pending, Reset, workpiece and
+generation replacement, and final mesh generation/material version. Shutdown
+flushes even a future-dated open window without a Capture. Live short movement
+flushes after its 20-ms deadline without another event. Already-expired source
+timestamps for 1/20/1000 ms flush without waiting another worker-local interval.
+The fatal-path regression keeps the producer's Capture promise alive while an
+out-of-range pending batch fails: the consumer must fail that already-dequeued
+Capture explicitly, not leave its future blocked.
+CLI rejects negative, nonintegral, nonnumeric and >1000 values, accepts 0/1000,
+and reports the default 20 and batch metrics in the real UDP integration test.
+
+### Final complete test runs (2026-09-29)
+
+| Suite | Result | Elapsed s |
+|---|---|---:|
+| Graphics Release | 61/61, no skips | 76.78 |
+| Headless Release, DISPLAY/WAYLAND_DISPLAY unset | 58/58, no skips | 66.96 |
+| ASan/UBSan + leak detection, complete headless suite | 58/58, no skips | 323.17 |
+| TSan, complete headless suite | 58/58, no skips | 268.38 |
+
+No ASan/UBSan/TSan report in these final full runs. All builds are warning-free.
+The complete graphics suite includes all three renderer tests. All four suites
+include protocol-unit, original-hal-inputs, UDP, private network namespace and
+vendor integrity tests. The explicit SHA-256 manifest check passes **9/9**;
+vendored files equal the original clean stepper-ninja checkout. Frozen fixtures,
+VoxelReference, coalescer and analytic predicate are byte-identical to 9e56ffe.
+
+### Final frozen curved benchmark: segmentwise versus 20 ms
+
+GCC 14.2 Release, same headless executable, one material owner and four meshworkers.
+Three consecutive pairs were run after all build/test/sanitizer workloads finished:
+`benchmark paced 4 0` then the unchanged `benchmark paced 4` command. Each command
+starts fresh raw stock separately for plunge-only and plunge+arc; it checks the
+unchanged full-cell reference outside the timed region. Wall time includes
+1-ms-paced input delivery, Capture and final material/mesh drain. Source timestamps
+are actual existing event creation times, so OS pacing changes window/coalescing
+counts slightly. No hard performance threshold is asserted.
+
+The following table reports the **first complete pair**, without selecting a best
+timing. The pre-implementation 9e56ffe rerun is retained as a third comparison.
+
+| Plunge + arc metric | 9e56ffe before editing | Current 0 ms reference | Current 20 ms union |
+|---|---:|---:|---:|
+| Motion events | 3143 | 3143 | 3143 |
+| After exact coalescing | 2579 | 2577 | 2599 |
+| Logical sweeps including Enable | 2580 | 2578 | 2600 |
+| All events including Enable/Capture | 3145 | 3145 | 3145 |
+| Removed voxels | 166400 | 166400 | 166400 |
+| Removed mm3 | 166.400 | 166.400 | 166.400 |
+| FNV-1a-64 | 585ccf7e9d0561a2 | 585ccf7e9d0561a2 | 585ccf7e9d0561a2 |
+| Batch calls | — | 0 | 154 |
+| Segments in batches | — | 0 | 2599 |
+| Average segments/batch | — | 0.000 | 16.877 |
+| Maximum segments/batch | — | 0 | 21 |
+| Batch candidate chunks | — | 0 | 1488 |
+| Batch candidate voxel visits, includes empty | — | 0 | 7414562 |
+| Occupied voxel visits / voxels tested | 23003452 | 22973331 | 1625966 |
+| Chunk-segment references | — | 0 | 24180 |
+| Analytic containment calls | 23003452 | 22973331 | 179600 |
+| Batch envelope-rejected occupied centres | — | 0 | 1440266 |
+| Prefilter-skipped segment references | — | 0 | 24397284 |
+| First-hit exits | — | 0 | 166400 |
+| Remaining references skipped after first hit | — | 0 | 908280 |
+| Chunks tested | 23978 | 23966 | 1488 |
+| Chunks changed | 5834 | 5824 | 752 |
+| Broad phase ms | 4.495 | 4.512 | 3.041 |
+| Narrow phase ms | 3414.927 | 3189.694 | 245.313 |
+| Mutation ms | 39.655 | 40.003 | 2.953 |
+| Invalidation ms | 34.884 | 35.324 | 2.270 |
+| Batch processing ms | — | 0.000 | 260.563 |
+| Material worker ms | 3606.683 | 3382.818 | 265.489 |
+| Coalescing/dequeue ms | 24.493 | 24.745 | 58.183 |
+| Snapshot ms | 19.017 | 8.040 | 6.448 |
+| Publication ms | 0.294 | 0.290 | 2.466 |
+| Motion queue maximum | 429 | 370 | 4 |
+| Mesh queue maximum | 280 | 280 | 280 |
+| Mesh jobs/rebuilds | 2245 | 2225 | 1134 |
+| Stale mesh jobs | 1945 | 1925 | 112 |
+| Accepted mesh jobs | 300 | 300 | 1022 |
+| Meshing ms, summed elapsed jobs | 5310.312 | 5115.528 | 2661.828 |
+| Final worker lag ms | 0.000 | 0.000 | 0.000 |
+| Wall ms | 3716.696 | 3528.128 | 3153.811 |
+
+Zero batch-specific counters in reference mode mean that no union path ran;
+they do not mean the segmentwise engine had no candidates. Batch candidate voxel
+visits include already empty cells; `voxels_tested` counts occupied centres.
+One containment call means one invocation of the unchanged analytic predicate.
+
+- Occupied voxel visits: 92.92% lower versus the current segmentwise reference.
+- Analytic containment calls: 99.22% lower versus the current segmentwise reference.
+- Narrow-phase elapsed time: 92.31% lower versus the current segmentwise reference.
+- Material-worker elapsed time: 92.15% lower versus the current segmentwise reference.
+- Motion queue maximum: 98.92% lower versus the current segmentwise reference.
+- Stale mesh jobs: 94.18% lower versus the current segmentwise reference.
+- Wall elapsed time: 10.61% lower versus the current segmentwise reference.
+
+The measured analytic-call reduction is **22793731** calls in this pair.
+The union separately skips **24397284** references through
+prefilters and **908280** remaining references after the
+first hit. Those counters describe a hypothetical blind union loop, **not**
+additional savings that can be added to the measured old/new call difference.
+
+| Repeat | Interval ms | Worker ms | Queue max | Stale jobs | Wall ms |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0 | 3382.818 | 370 | 1925 | 3528.128 |
+| 1 | 20 | 265.489 | 4 | 112 | 3153.811 |
+| 2 | 0 | 3324.647 | 355 | 1866 | 3476.782 |
+| 2 | 20 | 271.849 | 4 | 103 | 3160.437 |
+| 3 | 0 | 3300.442 | 317 | 1941 | 3479.516 |
+| 3 | 20 | 262.701 | 5 | 93 | 3154.297 |
+
+Every repeat preserves **166400 / 166.400 mm3**, fingerprint
+**585ccf7e9d0561a2**, and zero differing cells. Every separate plunge preserves
+**56560 / 56.560 mm3**, fingerprint **95c98093e6e51d52**. All end with motion
+and mesh queues, dirty chunks and lag zero; four meshworkers are observed.
+The first-pair plunge details are:
+
+| Plunge metric | 0 ms reference | 20 ms union |
+|---|---:|---:|
+| Worker ms | 6.134 | 4.743 |
+| Narrow ms | 3.704 | 3.829 |
+| Containment calls | 80724 | 56560 |
+| Wall ms | 90.513 | 86.830 |
+
+Compared with the originally supplied 9e56ffe paced report (worker 3656.478 ms,
+23020413 voxel/containment tests, queue maximum 490, stale jobs 1910 and wall
+3758.683 ms), the first 20-ms run uses 265.489 ms worker time,
+1625966 occupied visits / 179600 analytic calls,
+queue maximum 4, 112 stale jobs and 3153.811 ms wall.
+Wall time approaches the fixed 3142-ms delivery duration, so it cannot fall
+in proportion to compute time. Publication time can rise as coherent intermediate
+mesh directories become available more often. Mesh scheduling itself is unchanged.
+
+Review found no additional writer of material/versions/dirty state and no new
+UDP wait, lock or graphics call. Segment-index references remain within each
+union call; deep immutable mesh snapshots retain their lifetime independently.
+Versions increase by the actual removed count once per changed chunk, and
+six-face halo invalidation uses only actual hits. Generation validation remains
+unchanged. The discovered already-dequeued Capture failure path is fixed and
+covered by a producer-retained-promise regression.
+
+Remaining limits: loose candidate boxes for long/discontinuous paths, worst-case
+candidate-times-segment work, unbounded lossless input backlog, full sparse-volume
+snapshot costs and no hard realtime latency guarantee. The 256-segment cap bounds
+retained geometry per union, not total volume work or memory. Automated success
+does not grant real LinuxCNC acceptance: **NOT YET PASSED**.
+
+### Reproduction
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCNC_SIM_RENDER=ON -DCNC_SIM_RENDER_TESTS=ON
+cmake --build build -j 4
+ctest --test-dir build --output-on-failure
+cmake -S . -B build-headless -DCMAKE_BUILD_TYPE=Release -DCNC_SIM_RENDER=OFF -DCNC_SIM_RENDER_TESTS=OFF
+cmake --build build-headless -j 4
+ctest --test-dir build-headless --output-on-failure
+./build-headless/curved-material-tests benchmark paced 4
+./build-headless/curved-material-tests benchmark paced 4 0
+ctest --test-dir build-headless -R 'material-batch-|curved-' --output-on-failure
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+  ctest --test-dir build-sanitize --output-on-failure
+TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build-tsan --output-on-failure
+```
+
+Use the sanitizer configurations below (the same non-PIE GCC setup as the frozen
+baseline). Full ASan/UBSan and **full TSan headless suites** include every new batch
+test and the zero-interval reference test. The new 1-ms batch test originally hit
+its own 30-second future wait under instrumentation, with no sanitizer finding.
+That completion guard is now 120 seconds; the independent CTest timeout remains
+180 seconds. No voxel, fingerprint or frozen work-count assertion was changed.
+Benchmarks are measured separately from sanitizer/build workloads; their timings are diagnostics, not pass thresholds.
+The real LinuxCNC performance acceptance remains **NOT YET PASSED**.
+
 ## First real run (operator-supplied baseline, before optimization)
 
 Workpiece 30 x 20 x 10 mm, position (15,10,-10), origin center/center/max,

@@ -93,6 +93,7 @@ void usage() {
         "  --stats-ms N                Statistics interval >= 100 ms\n"
         "  --no-stats                  Headless; commands and final statistics\n"
         "  --verbose                   Show latest packet counters every refresh\n"
+        "  --material-batch-ms N       Event-time window: default 20, 1..1000; 0=segmentwise\n"
         "  --material-workers N        Material owner count: must be 1\n"
         "  --mesh-workers N            0=auto (up to 4, reserve 2 CPUs); explicit 1..32\n"
         "  --render                    Open optional OpenGL 3.3 window\n"
@@ -141,6 +142,7 @@ Options parse(int argc, char** argv) {
         else if (flag == "--no-stats") { options.stats_ms = 0; options.interactive = false; }
         else if (flag == "--verbose") options.verbose = true;
         else if (flag == "--material-workers") options.workers.material_workers = number(value());
+        else if (flag == "--material-batch-ms") options.workers.material_batch_ms = number(value());
         else if (flag == "--mesh-workers") options.workers.mesh_workers = number(value());
         else if (flag == "--render") options.render = true;
         else if (flag == "--voxel-size") options.scene.volume.voxel_size_mm = real_number(value());

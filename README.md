@@ -12,9 +12,14 @@ Pakete ohne gemeldete Fehler oder ID-Lücken.
 Der erste reale Phase-5-Lauf entfernte geometrisch korrekt **296560 Voxel**,
 zeigte aber einen großen Performance-Rückstand. Die Optimierung fasst exakt
 kollineare Motion zusammen, invalidiert chunkweise und mesht unveränderliche
-Snapshots parallel. Der UDP-Pfad bleibt unabhängig. Die reale Abnahme muss mit
+Snapshots parallel. Für Kurven sammelt die Batch Sweep Union standardmäßig
+20 ms an Event-Zeitstempeln; alle nicht exakt zusammenfassbaren Segmente bleiben
+erhalten. Der UDP-Pfad bleibt unabhängig. Die reale Abnahme muss mit
 demselben LinuxCNC-Test wiederholt werden: **NOT YET PASSED**.
 
+`--material-batch-ms N` setzt das Materialfenster: Standard 20 ms, ganze Zahlen
+1..1000; 0 aktiviert den bisherigen segmentweisen Referenzpfad. Steuerbefehle
+und Capture schließen offene Batches vor ihrer Ausführung ab.
 `--material-workers 1` behält einen autoritativen Material-Thread.
 `--mesh-workers 0` (Standard) wählt bis zu vier Mesh-Threads und lässt rechnerisch
 zwei logische CPUs frei; explizit sind 1..32 möglich. Andere Material-Threadzahlen

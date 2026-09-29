@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <vector>
 #include <glm/glm.hpp>
@@ -52,6 +53,9 @@ public:
     ChunkState chunk_state(ChunkCoord chunk) const;
     const VoxelChunk& materialize_chunk(ChunkCoord chunk);
     bool erase(VoxelCoord voxel);
+    // Single-owner bulk mutation. Local x-fast indices; duplicate/empty cells are
+    // harmless. Metadata is updated once, retaining per-removed-voxel versions.
+    std::uint32_t erase_chunk_voxels(ChunkCoord chunk, std::span<const std::uint32_t> indices);
     std::uint64_t version() const { return version_; }
     std::uint64_t chunk_version(ChunkCoord c) const;
     std::uint64_t removed_voxels() const { return removed_; }

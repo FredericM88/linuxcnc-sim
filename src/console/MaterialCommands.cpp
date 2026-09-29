@@ -16,6 +16,16 @@ std::string describe_material(const MaterialStatus& s, bool compact) {
     if (compact) return out.str() + '\n';
     out << "\nWorkers: material " << s.material_workers << " | mesh " << s.mesh_workers << " | parallel mesh peak " << s.mesh_parallel_max
         << "\nMotion events received: " << s.motion_received << " | after coalescing: " << s.motion_coalesced
+        << "\nMaterial batch interval: " << s.material_batch_ms << " ms (0: segmentwise reference)"
+        << "\nBatches processed: " << s.removal.batch.batches << " | segments: " << s.removal.batch.segments
+        << " | avg: " << (s.removal.batch.batches ? static_cast<double>(s.removal.batch.segments)/static_cast<double>(s.removal.batch.batches) : 0.0)
+        << " | max: " << s.removal.batch.max_segments
+        << "\nBatch candidate chunks: " << s.removal.batch.candidate_chunks << " | candidate voxels: " << s.removal.batch.candidate_voxels
+        << " | occupied: " << s.removal.batch.occupied_candidates << " | chunk-segment refs: " << s.removal.batch.chunk_segment_refs
+        << "\nSweep containment tests: " << s.removal.containment_tests << " | batch: " << s.removal.batch.containment_tests
+        << "\nBatch envelope rejects: " << s.removal.batch.envelope_rejects << " | prefilter skipped refs: " << s.removal.batch.prefilter_rejected_refs
+        << "\nBatch first-hit exits: " << s.removal.batch.first_hit_exits << " | remaining refs skipped: " << s.removal.batch.first_hit_skipped_refs
+        << "\nBatch processing: " << s.removal.batch.processing_ms << " ms"
         << "\nMesh queue: " << s.mesh_queue_depth << " / max " << s.mesh_queue_max
         << "\nBroad phase: " << s.removal.broad_ms << " ms | narrow phase: " << s.removal.narrow_ms
         << " ms | voxel mutation: " << s.removal.mutation_ms << " ms | dirty invalidation: " << s.removal.invalidation_ms << " ms"

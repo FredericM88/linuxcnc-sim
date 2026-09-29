@@ -10,6 +10,7 @@ double milliseconds(Clock::duration d) { return std::chrono::duration<double, st
 MaterialWorkerConfig resolve_material_workers(MaterialWorkerConfig config) {
     if (config.material_workers!=1) throw std::invalid_argument("material workers must be 1 (single authoritative material owner)");
     if (config.mesh_workers>32) throw std::invalid_argument("mesh workers must be in 0..32 (0: automatic)");
+    if (config.material_batch_ms>1000) throw std::invalid_argument("material batch interval must be in 0..1000 ms (0: segmentwise reference)");
     if (!config.mesh_workers) {
         const auto cpus=std::thread::hardware_concurrency();
         config.mesh_workers=std::min(4u,cpus>2 ? cpus-2 : 1u);
@@ -20,6 +21,7 @@ MaterialWorker::MaterialWorker(std::shared_ptr<const WorkpieceSnapshot> raw, Mat
     : raw_(std::move(raw)), engine_(std::make_unique<MaterialRemoval>(*raw_->volume)) {
     config=resolve_material_workers(config);
     state_.material_workers=config.material_workers; state_.mesh_workers=config.mesh_workers;
+    state_.material_batch_ms=config.material_batch_ms;
     engine_->dirty_all(); state_.generation = 1;
     worker_ = std::jthread([this] { run(); });
 }
@@ -64,7 +66,22 @@ void MaterialWorker::run() {
     MaterialEvent pending_motion;
     bool has_pending_motion = false;
     Clock::time_point pending_since;
+    std::vector<SweepSegment> sweep_segments;
+    std::shared_ptr<std::promise<std::shared_ptr<const SparseVoxelVolume>>> active_capture;
+    bool window_open=false;
+    Clock::time_point window_start, last_motion_time;
+    const auto interval=std::chrono::milliseconds(state_.material_batch_ms);
+    auto apply_union=[&] {
+        if (!sweep_segments.empty()) {
+            const auto start=Clock::now();
+            engine_->sweep_batch(sweep_segments,state_.tool);
+            state_.worker_ms+=milliseconds(Clock::now()-start);
+            sweep_segments.clear();
+        }
+        window_open=false;
+    };
     try {
+        sweep_segments.reserve(256);
         mesh_workers=std::make_unique<MeshWorkers>(state_.mesh_workers);
         for (;;) {
             const auto batch_start = Clock::now();
@@ -77,7 +94,10 @@ void MaterialWorker::run() {
                 switch (event.kind) {
                 case MaterialEventKind::Motion:
                     ++state_.motion_coalesced;
-                    if (state_.enabled) engine_->sweep(event.from, event.to, state_.tool);
+                    if (state_.enabled) {
+                        if (state_.material_batch_ms) sweep_segments.push_back({event.from,event.to});
+                        else engine_->sweep(event.from,event.to,state_.tool);
+                    }
                     break;
                 case MaterialEventKind::Enable:
                     if (!state_.enabled) engine_->sweep(event.to, event.to, state_.tool);
@@ -106,21 +126,42 @@ void MaterialWorker::run() {
             };
             while (processed < 65536 && milliseconds(Clock::now() - batch_start) < 20 && queue_.pop(event)) {
                 ++state_.events_processed; ++processed;
+                active_capture=event.capture; // A preceding union may fail before this Capture executes.
                 if (event.kind == MaterialEventKind::Motion) {
                     ++state_.motion_received;
+                    // Half-open windows use source event time, never worker processing
+                    // duration. A whole input segment belongs to its endpoint event.
+                    if (state_.material_batch_ms) {
+                        if (window_open && (event.time-window_start>=interval || event.time<last_motion_time)) {
+                            flush(); apply_union();
+                        }
+                        if (!window_open) { window_start=event.time; window_open=true; }
+                        last_motion_time=event.time;
+                    }
                     if (has_pending_motion && pending_motion.to == event.from &&
                         exact_straight_extension(pending_motion.from, pending_motion.to, event.to)) {
                         pending_motion.to = event.to;
                     } else {
-                        flush(); pending_motion = std::move(event); has_pending_motion = true; pending_since = Clock::now();
+                        flush();
+                        // Bound retained geometry even for a stalled/repeated event clock.
+                        if (sweep_segments.size()>=256) { apply_union(); window_start=event.time; window_open=true; }
+                        pending_motion = std::move(event); has_pending_motion = true; pending_since = Clock::now();
                     }
-                } else { flush(); process(std::move(event)); }
-                event = {};
+                } else { flush(); apply_union(); process(std::move(event)); }
+                event = {}; active_capture.reset();
             }
-            if (has_pending_motion && (finishing_.load(std::memory_order_acquire) ||
+            if (state_.material_batch_ms) {
+                // Idle/stop commits a short window at its event-time deadline. A
+                // transient empty FIFO between samples does not split the window.
+                if (window_open && queue_.depth()==0 &&
+                    (finishing_.load(std::memory_order_acquire) || Clock::now()-window_start>=interval)) {
+                    flush(); apply_union();
+                }
+            } else if (has_pending_motion && (finishing_.load(std::memory_order_acquire) ||
                 milliseconds(Clock::now() - pending_since) >= 20)) flush();
             state_.coalescing_ms += milliseconds(Clock::now()-batch_start) - (state_.worker_ms-prior_worker_ms);
-            if (has_pending_motion) state_.lag_ms=milliseconds(Clock::now()-pending_motion.time);
+            if (window_open) state_.lag_ms=std::max(0.0,milliseconds(Clock::now()-window_start));
+            else if (has_pending_motion) state_.lag_ms=std::max(0.0,milliseconds(Clock::now()-pending_motion.time));
             // Collect finished jobs without ever waiting for meshing. Compare the
             // owner chunk AND its face halo; halo-only changes invalidate meshes too.
             if (batch && batch->remaining.load(std::memory_order_acquire)==0) {
@@ -158,7 +199,7 @@ void MaterialWorker::run() {
             }
             state_.mesh_queue_depth=engine_->dirty().size() + (batch ? batch->remaining.load(std::memory_order_acquire) : 0);
             state_.mesh_queue_max=std::max(state_.mesh_queue_max,state_.mesh_queue_depth);
-            const bool idle = queue_.depth() == 0 && !has_pending_motion && !batch && engine_->dirty().size() == 0;
+            const bool idle = queue_.depth() == 0 && !has_pending_motion && !window_open && !batch && engine_->dirty().size() == 0;
             if (idle) state_.lag_ms = 0;
             if (milliseconds(Clock::now() - last_publish) >= 20 || (!batch && meshes_changed)) publish();
             if (finishing_.load(std::memory_order_acquire) && idle) break;
@@ -170,6 +211,12 @@ void MaterialWorker::run() {
         state_.error = std::string("material worker failed; simulation incomplete: ") + e.what();
         { std::lock_guard lock(publication_); published_ = state_; }
         failed_.store(true, std::memory_order_release);
+        // Also fail a Capture already popped from the FIFO. Its producer may
+        // still own the promise, so destroying the event would not unblock it.
+        if (active_capture) {
+            active_capture->set_exception(std::make_exception_ptr(std::runtime_error(state_.error)));
+            active_capture.reset();
+        }
         // Unblock any diagnostic captures while the UDP producer is being stopped.
         while (!finishing_.load(std::memory_order_acquire) || queue_.depth()) {
             MaterialEvent event;
