@@ -107,6 +107,25 @@ als übersprungen; die übrigen Tests laufen trotzdem. Der Release-Build kann
 mit `-DCMAKE_BUILD_TYPE=Release` konfiguriert werden. Ohne Tests ist Python
 nicht erforderlich: `-DBUILD_TESTING=OFF`.
 
+## Simulator-Konfiguration (Phase 5.5)
+
+```bash
+./build/cnc-sim --config examples/mill/simulator.ini
+./build/cnc-sim --config examples/mill/simulator.ini --material-batch-ms 50 --print-config
+```
+
+`simulator.ini` bündelt Netzwerk, Achsen, Material-/Mesh-Worker, Rendering,
+Werkstück und Werkzeug. Reihenfolge: **Defaults < INI < CLI < Laufzeitbefehle**.
+Alle bisherigen CLI-Optionen bleiben erhalten; ohne INI bleiben die bisherigen
+Defaults aktiv. `--print-config` validiert und zeigt die wirksame Startkonfiguration,
+ohne UDP oder Worker zu starten. Relative INI-Dateipfade beziehen sich auf das
+INI-Verzeichnis. `virtual-io.conf` bleibt eine eigene Datei mit Sensorbefehlen in
+Schrittkoordinaten. Interaktive Änderungen werden nicht zurückgeschrieben.
+
+Das Beispiel verwendet die abgenommene Milling-Szene mit Grafik und Material OFF
+für Homing. [Vollständiges Schema, Koordinaten, CLI-Kompatibilität und Grenzen](docs/simulator-configuration.md)
+und [Phase-5.5-Validierung](docs/phase55-test.md).
+
 ## Phase 4A: optionale 3D-Ansicht
 
 ```bash

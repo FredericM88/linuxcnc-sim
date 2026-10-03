@@ -3,6 +3,21 @@
 #include <stdexcept>
 
 namespace cnc {
+std::shared_ptr<const WorkpieceSnapshot> workpiece_from_scene(const SceneConfig& scene) {
+    auto volume = std::make_shared<const SparseVoxelVolume>(scene);
+    validate_workpiece_volume(*volume);
+    WorkpieceConfig config;
+    config.size_mm = scene.stock_size_mm;
+    const bool rotated = volume->config().workpiece.orientation != glm::dquat(1,0,0,0);
+    // The minimum corner is invariant under a legacy rotation about local zero.
+    // Selecting it keeps position a true G53 reference point even in legacy scenes.
+    config.origin_offset_mm = rotated ? glm::dvec3(0) : glm::dvec3(0, 0, config.size_mm.z);
+    config.position_machine_mm = scene.workpiece.translation + config.origin_offset_mm;
+    config.voxel_size_mm = scene.volume.voxel_size_mm;
+    return std::make_shared<const WorkpieceSnapshot>(WorkpieceSnapshot{
+        config, volume, 1, rotated});
+}
+
 void validate_workpiece_volume(const SparseVoxelVolume& volume) {
     if (volume.config().volume.chunk_size != VolumeConfig{}.chunk_size)
         throw std::invalid_argument("workpiece chunk size must remain 32 x 32 x 32");

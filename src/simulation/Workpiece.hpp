@@ -18,6 +18,8 @@ struct WorkpieceSnapshot {
     std::uint64_t revision{};
     bool legacy_rotation{};
 };
+// Preserve legacy minimum-corner translation and rotation exactly.
+std::shared_ptr<const WorkpieceSnapshot> workpiece_from_scene(const SceneConfig& scene);
 // Same bounded job budget in graphical and headless simulation.
 constexpr std::uint64_t max_workpiece_chunks = 65536;
 std::shared_ptr<const SparseVoxelVolume> build_workpiece(const WorkpieceConfig& config);

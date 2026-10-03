@@ -31,7 +31,9 @@ class Simulation {
 public:
     Simulation(const std::string& address, std::uint16_t port, Scales scales,
                const std::vector<IOCommand>& initial_io = {},
-               std::optional<SceneConfig> scene = std::nullopt, MaterialWorkerConfig workers = {});
+               std::optional<SceneConfig> scene = std::nullopt, MaterialWorkerConfig workers = {},
+               std::shared_ptr<const WorkpieceSnapshot> initial_workpiece = {},
+               ToolDefinition initial_tool = {}, bool material_enabled = false);
     ~Simulation();
     Simulation(const Simulation&) = delete;
     Simulation& operator=(const Simulation&) = delete;

@@ -1,8 +1,6 @@
 #include <array>
 #include <atomic>
-#include <charconv>
 #include <chrono>
-#include <cmath>
 #include <csignal>
 #include <iomanip>
 #include <iostream>
@@ -11,6 +9,7 @@
 #include <string_view>
 #include <future>
 #include <sstream>
+#include "config/SimulatorConfig.hpp"
 #include "console/MaterialCommands.hpp"
 #include "console/TerminalUI.hpp"
 #include "console/IOCommands.hpp"
@@ -25,154 +24,7 @@ static_assert(std::atomic<bool>::is_always_lock_free);
 std::atomic<bool> stopping{false};
 extern "C" void stop_handler(int) { stopping = 1; }
 
-struct Options {
-    std::string bind_address = "192.168.50.2";
-    std::uint16_t port = cnc::default_port;
-    cnc::Scales scales{cnc::default_scale, cnc::default_scale, cnc::default_scale, cnc::default_scale};
-    std::array<std::string, cnc::axis_count> units{"mm", "mm", "mm", "unit"};
-    unsigned stats_ms = 0;
-    bool interactive = true;
-    bool verbose = false;
-    bool render = false;
-    cnc::SceneConfig scene;
-    cnc::MaterialWorkerConfig workers;
-    std::vector<cnc::IOCommand> initial_io;
-};
-
-unsigned number(std::string_view value) {
-    unsigned result{};
-    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), result);
-    if (error != std::errc{} || end != value.data() + value.size()) {
-        throw std::invalid_argument("invalid nonnegative integer: " + std::string(value));
-    }
-    return result;
-}
-
-std::array<std::string, cnc::axis_count> split_four(std::string_view text) {
-    std::array<std::string, cnc::axis_count> result;
-    for (std::size_t i = 0; i < result.size(); ++i) {
-        const auto end = text.find(',');
-        if ((i < result.size() - 1 && end == std::string_view::npos) ||
-            (i == result.size() - 1 && end != std::string_view::npos)) {
-            throw std::invalid_argument("expected exactly four comma-separated values");
-        }
-        result[i] = text.substr(0, end);
-        if (result[i].empty()) throw std::invalid_argument("empty value in list");
-        if (end != std::string_view::npos) text.remove_prefix(end + 1);
-    }
-    return result;
-}
-
-double real_number(std::string_view text) {
-    std::size_t consumed{};
-    const auto value = std::stod(std::string(text), &consumed);
-    if (consumed != text.size() || !std::isfinite(value)) throw std::invalid_argument("expected a finite number");
-    return value;
-}
-
-glm::dvec3 triple(std::string_view text) {
-    glm::dvec3 result;
-    for (int i = 0; i < 3; ++i) {
-        const auto end = text.find(',');
-        if ((i < 2 && end == std::string_view::npos) || (i == 2 && end != std::string_view::npos))
-            throw std::invalid_argument("expected three comma-separated values");
-        result[i] = real_number(text.substr(0, end));
-        if (end != std::string_view::npos) text.remove_prefix(end + 1);
-    }
-    return result;
-}
-
-void usage() {
-    std::cout << "Usage: cnc-sim [options]\n"
-        "  --bind IPv4                 Default: 192.168.50.2\n"
-        "  --port N                    Default: 8888; 0 selects a port for tests\n"
-        "  --steps-per-unit X,Y,Z,A     Default configuration: 1000,1000,1000,1000\n"
-        "  --units X,Y,Z,A              Display labels; default: mm,mm,mm,unit\n"
-        "  --io-config FILE            Sensor commands loaded before UDP starts (step coordinates)\n"
-        "  --stats                     Legacy scrolling statistics every second\n"
-        "  --stats-ms N                Statistics interval >= 100 ms\n"
-        "  --no-stats                  Headless; commands and final statistics\n"
-        "  --verbose                   Show latest packet counters every refresh\n"
-        "  --material-batch-ms N       Event-time window: default 20, 1..1000; 0=segmentwise\n"
-        "  --material-workers N        Material owner count: must be 1\n"
-        "  --mesh-workers N            0=auto (up to 4, reserve 2 CPUs); explicit 1..32\n"
-        "  --render                    Open optional OpenGL 3.3 window\n"
-        "  --voxel-size MM             Positive voxel edge; default 0.1\n"
-        "  --stock-size X,Y,Z          Stock dimensions in mm; default 50,50,10\n"
-        "  --stock-origin X,Y,Z        Legacy minimum-corner translation; default 0,0,-10\n"
-        "  --stock-rotation X,Y,Z      Euler degrees; Rz * Ry * Rx; default 0,0,0\n"
-        "  --help                      Show this help\n"
-        "Default: fixed interactive terminal (5 Hz); type help for commands.\nPositions start at zero. Scales and units are local configuration, not wire data.\n";
-}
-
-Options parse(int argc, char** argv) {
-    Options options;
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view flag(argv[i]);
-        auto value = [&]() -> std::string_view {
-            if (++i >= argc) throw std::invalid_argument("missing value for " + std::string(flag));
-            return argv[i];
-        };
-        if (flag == "--bind") options.bind_address = value();
-        else if (flag == "--port") {
-            const auto port = number(value());
-            if (port > 65535) throw std::invalid_argument("port must be in 0..65535");
-            options.port = static_cast<std::uint16_t>(port);
-        } else if (flag == "--steps-per-unit") {
-            const auto values = split_four(value());
-            for (std::size_t axis = 0; axis < values.size(); ++axis) {
-                std::size_t consumed{};
-                options.scales[axis] = std::stod(values[axis], &consumed);
-                if (consumed != values[axis].size() || !std::isfinite(options.scales[axis]) || options.scales[axis] == 0) {
-                    throw std::invalid_argument("steps-per-unit must be finite and nonzero");
-                }
-            }
-        } else if (flag == "--units") options.units = split_four(value());
-        else if (flag == "--io-config") {
-            const auto commands = cnc::load_io_config(std::string(value()));
-            options.initial_io.insert(options.initial_io.end(), commands.begin(), commands.end());
-        }
-        else if (flag == "--stats-ms") {
-            options.interactive = false;
-            options.stats_ms = number(value());
-            if (options.stats_ms < 100 || options.stats_ms > 3600000) {
-                throw std::invalid_argument("stats-ms must be in 100..3600000");
-            }
-        } else if (flag == "--stats") { options.stats_ms = 1000; options.interactive = false; }
-        else if (flag == "--no-stats") { options.stats_ms = 0; options.interactive = false; }
-        else if (flag == "--verbose") options.verbose = true;
-        else if (flag == "--material-workers") options.workers.material_workers = number(value());
-        else if (flag == "--material-batch-ms") options.workers.material_batch_ms = number(value());
-        else if (flag == "--mesh-workers") options.workers.mesh_workers = number(value());
-        else if (flag == "--render") options.render = true;
-        else if (flag == "--voxel-size") options.scene.volume.voxel_size_mm = real_number(value());
-        else if (flag == "--stock-size") options.scene.stock_size_mm = triple(value());
-        else if (flag == "--stock-origin") options.scene.workpiece.translation = triple(value());
-        else if (flag == "--stock-rotation") {
-            const auto angles = glm::radians(triple(value()));
-            options.scene.workpiece.orientation = glm::angleAxis(angles.z, glm::dvec3(0,0,1)) *
-                glm::angleAxis(angles.y, glm::dvec3(0,1,0)) * glm::angleAxis(angles.x, glm::dvec3(1,0,0));
-        }
-        else throw std::invalid_argument("unknown option: " + std::string(flag));
-    }
-    for (const auto& unit : options.units) {
-        for (unsigned char c : unit) if (c < 32 || c == 127)
-            throw std::invalid_argument("units must not contain control characters");
-    }
-    // Validate scene options even when graphics are disabled, without allocating voxels.
-    (void)cnc::SparseVoxelVolume(options.scene);
-    if (options.render) {
-#ifndef CNC_SIM_RENDER
-        throw std::invalid_argument("--render unavailable: rebuild with -DCNC_SIM_RENDER=ON");
-#endif
-        for (std::size_t axis = 0; axis < 3; ++axis)
-            if (options.units[axis] != "mm") throw std::invalid_argument("--render requires XYZ --units mm,mm,mm (scales in steps/mm)");
-    }
-    options.workers=cnc::resolve_material_workers(options.workers);
-    return options;
-}
-
-std::string statistics(const cnc::SimulationStatus& state, const Options& options, bool compact) {
+std::string statistics(const cnc::SimulationStatus& state, const cnc::SimulatorConfig& options, bool compact) {
     const auto& s = state.packets;
     std::ostringstream out;
     if (compact) {
@@ -195,7 +47,7 @@ std::string statistics(const cnc::SimulationStatus& state, const Options& option
     constexpr std::array labels{"X", "Y", "Z", "A"};
     for (std::size_t i = 0; i < cnc::axis_count; ++i)
         out << labels[i] << "  " << state.positions[i] << " steps  "
-            << std::fixed << std::setprecision(4) << static_cast<double>(state.positions[i]) / options.scales[i]
+            << std::fixed << std::setprecision(4) << static_cast<double>(state.positions[i]) / options.scales()[i]
             << ' ' << options.units[i] << '\n';
     out << "Recorder: " << (state.recorder_failed ? "ERROR: allocation failed, incomplete" :
                                state.recording ? "RECORDING" : "STOPPED")
@@ -209,7 +61,7 @@ std::string trim(std::string text) {
     if (first == std::string::npos) return {};
     return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
 }
-void run_console(cnc::Simulation& simulation, const Options& options) {
+void run_console(cnc::Simulation& simulation, const cnc::SimulatorConfig& options) {
     std::future<std::string> saving;
     {
         cnc::TerminalUI terminal(options.interactive);
@@ -217,7 +69,7 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
             std::cout << "Stepper-Ninja virtual device (Phase 5, 4 stepgens / 3 stationary encoders)\n"
                       << "Wire sizes: " << cnc::request_size << " RX / " << cnc::response_size << " TX\n"
                       << "Reference: zero steps on startup; scales are local configuration\n"
-                      << "Listening: " << options.bind_address << ':' << simulation.port() << std::endl;
+                      << "Listening: " << options.network.bind_address << ':' << simulation.port() << std::endl;
         }
         std::string message = "Ready. help: commands; record begin: new recording; quit: exit";
         std::string peer;
@@ -280,7 +132,7 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
                             auto snapshot = simulation.command(cnc::Action::Save).recording;
                             if (!snapshot.count) throw std::runtime_error("no samples to save");
                             saving = std::async(std::launch::async,
-                                [snapshot = std::move(snapshot), scales = options.scales, units = options.units, filename] {
+                                [snapshot = std::move(snapshot), scales = options.scales(), units = options.units, filename] {
                                     try {
                                         cnc::save_csv(snapshot, scales, units, filename);
                                         return "Saved " + std::to_string(snapshot.count) + " samples: " + filename;
@@ -333,8 +185,15 @@ void run_console(cnc::Simulation& simulation, const Options& options) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 2 && std::string_view(argv[1]) == "--help") { usage(); return 0; }
-        const auto options = parse(argc, argv);
+        if (argc == 2 && std::string_view(argv[1]) == "--help") { cnc::simulator_usage(); return 0; }
+        const auto options = cnc::load_simulator_config(argc, argv,
+#ifdef CNC_SIM_RENDER
+            true
+#else
+            false
+#endif
+        );
+        if (options.print_config) { std::cout << cnc::describe_config(options); return 0; }
         struct sigaction action{};
         action.sa_handler = stop_handler;
         sigemptyset(&action.sa_mask);
@@ -344,8 +203,9 @@ int main(int argc, char** argv) {
         struct sigaction ignore{};
         ignore.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &ignore, nullptr);
-        cnc::Simulation simulation(options.bind_address, options.port, options.scales, options.initial_io,
-                                   options.scene, options.workers);
+        cnc::Simulation simulation(options.network.bind_address, options.network.port, options.scales(), options.io.commands,
+                                   std::nullopt, options.workers, options.initial_workpiece,
+                                   options.tool, options.material_enabled);
 #ifdef CNC_SIM_RENDER
         if (options.render) {
             auto rendered = simulation.workpiece_snapshot();

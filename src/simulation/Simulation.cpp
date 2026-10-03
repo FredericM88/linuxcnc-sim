@@ -5,26 +5,27 @@
 
 namespace cnc {
 Simulation::Simulation(const std::string& address, std::uint16_t port, Scales scales,
-                       const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene, MaterialWorkerConfig workers)
+                       const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene, MaterialWorkerConfig workers,
+                       std::shared_ptr<const WorkpieceSnapshot> initial_workpiece,
+                       ToolDefinition initial_tool, bool material_enabled)
     : device_(scales), server_(address, port),
       scales_(scales) {
-    if (scene) {
-        auto volume = std::make_shared<const SparseVoxelVolume>(*scene);
-        validate_workpiece_volume(*volume);
-        WorkpieceConfig config;
-        config.size_mm = scene->stock_size_mm;
-        const bool rotated = volume->config().workpiece.orientation != glm::dquat(1,0,0,0);
-        // The minimum corner is invariant under a legacy rotation about local zero.
-        // Selecting it keeps position a true G53 reference point even in legacy scenes.
-        config.origin_offset_mm = rotated ? glm::dvec3(0) : glm::dvec3(0, 0, config.size_mm.z);
-        config.position_machine_mm = scene->workpiece.translation + config.origin_offset_mm;
-        config.voxel_size_mm = scene->volume.voxel_size_mm;
-        workpiece_ = std::make_shared<const WorkpieceSnapshot>(WorkpieceSnapshot{
-            config, volume, 1, rotated});
-    } else configure_workpiece(WorkpieceConfig{});
+    validate_tool(initial_tool);
+    if (initial_workpiece) workpiece_ = std::move(initial_workpiece);
+    else if (scene) workpiece_ = workpiece_from_scene(*scene);
+    else configure_workpiece(WorkpieceConfig{});
     for (const auto& command : initial_io) sensors_.execute(command, device_.machine().positions());
     published_.io = sensors_.status();
     material_ = std::make_unique<MaterialWorker>(workpiece_snapshot(), workers);
+    // Startup controls precede every UDP motion and use the existing ordered event path.
+    if (initial_tool != ToolDefinition{}) {
+        MaterialEvent event; event.kind = MaterialEventKind::Tool; event.tool = initial_tool;
+        material_->enqueue(std::move(event));
+    }
+    if (material_enabled) {
+        MaterialEvent event; event.kind = MaterialEventKind::Enable;
+        material_->enqueue(std::move(event));
+    }
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
 }
 Simulation::~Simulation() { stop(); }

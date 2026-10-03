@@ -19,6 +19,7 @@ target_include_directories(stepper_ninja_original SYSTEM PUBLIC
     "${NINJA_SOURCE}/firmware/modules/inc")
 
 add_library(cnc_sim_core STATIC
+    src/config/SimulatorConfig.cpp
     src/protocol/StepperNinjaProtocol.cpp
     src/machine/MachineState.cpp
     src/network/UdpServer.cpp
@@ -61,6 +62,10 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(configuration-model-tests tests/configuration_model_tests.cpp)
+    target_link_libraries(configuration-model-tests PRIVATE cnc_sim_core)
+    target_compile_options(configuration-model-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+    add_test(NAME config-model COMMAND configuration-model-tests)
     add_executable(material-batch-tests tests/material_batch_tests.cpp)
     target_link_libraries(material-batch-tests PRIVATE cnc_sim_core)
     target_compile_options(material-batch-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
@@ -144,6 +149,16 @@ if(BUILD_TESTING)
         add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
     endif()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    foreach(test defaults full partial precedence legacy axes axis-units
+            origin-symbolic origin-numeric origin-mixed relative-io unknown-section unknown-key
+            duplicates numeric enums vectors port scales voxel size batch material-workers
+            mesh-workers tool missing-io diagnostics stats placement-overrides no-config-runtime startup-runtime)
+        add_test(NAME config-${test} COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/configuration_tests.py" "$<TARGET_FILE:cnc-sim>" ${test})
+        set_tests_properties(config-${test} PROPERTIES TIMEOUT 60)
+    endforeach()
+    add_test(NAME config-render COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/configuration_tests.py" "$<TARGET_FILE:cnc-sim>" render ${CNC_SIM_RENDER})
     add_test(NAME curved-material-fixture COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/generate_curved_motion.py")
     add_test(NAME material-integration COMMAND "${Python3_EXECUTABLE}"
