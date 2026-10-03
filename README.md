@@ -77,8 +77,9 @@ may be explored in the future; v0.1.0 supports this interface only.
 - For the LinuxCNC example: LinuxCNC userspace, its matching development files,
   and the Stepper-Ninja HAL module built with the pinned Board-0 UDP profile.
   The [HAL compatibility build](docs/hal-api-compatibility.md) supports the 2.9
-  and 2.10 APIs. Manual acceptance used LinuxCNC 2.9.10; 2.10-pre2 has compile
-  and isolated contract-test coverage, with live acceptance still pending.
+  and 2.10 APIs. Manual acceptance used LinuxCNC 2.9.10 and, subsequently,
+  [2.10.0~pre2 RIP with HAL API 1 and POSIX/uspace realtime](docs/linuxcnc-2.10-runtime-acceptance.md)
+  for the pinned Board-0 UDP profile.
 - `sudo`/root for veth/network-namespace setup and HAL module installation.
   Ordinary simulator builds and most tests do not need root or LinuxCNC.
 

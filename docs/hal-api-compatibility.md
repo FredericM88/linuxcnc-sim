@@ -6,6 +6,10 @@ It supports this simulator's pinned Board-0 UDP profile. It does not change
 the simulator, packet definitions, checksums, pin names, directions, defaults,
 motion calculations or frozen material references.
 
+Commit `9758646` subsequently passed [real runtime acceptance](linuxcnc-2.10-runtime-acceptance.md)
+with LinuxCNC 2.10.0~pre2 RIP, HAL API 1 and POSIX/uspace realtime for the pinned
+Board-0 UDP profile. The compile/test results below remain the earlier record.
+
 ## Source ownership and preparation
 
 The complete original driver is still obtained separately from
@@ -148,7 +152,9 @@ The contract test links a test-only HAL allocator/exporter and intercepts packet
 send/receive; it uses the real API-1 inline getters/setters. It is not a LinuxCNC
 runtime or real shared-memory integration test. Producing/loading a 2.10 module
 with 2.10's own link/export rules would require a configured 2.10 development
-environment (`Makefile.modinc`) and live acceptance; this was not attempted.
+environment (`Makefile.modinc`) and live acceptance; this was not attempted
+during the initial compile validation. The subsequent RIP runtime acceptance
+is documented above; the source-tree CMake mode remains a compile check only.
 
 ## Validation on 2026-10-03
 
@@ -174,6 +180,7 @@ and six pin-creation failure positions. Preparation tests cover repeatability,
 rejection of modified driver/configuration inputs and protected output paths.
 
 No compiler warnings occurred in these builds; upstream emits informational
-`#pragma message` notes. There was no installation, module loading, new live
-LinuxCNC acceptance run, commit or push. PWM/SPI and other board profiles have
-no runtime-validation claim. The existing checksum-error reference bug remains.
+`#pragma message` notes. During this initial validation there was no installation,
+module loading, new live LinuxCNC acceptance run, commit or push. PWM/SPI and
+other board profiles have no runtime-validation claim. The existing checksum-error
+reference bug remains.
