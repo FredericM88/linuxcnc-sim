@@ -1,0 +1,8 @@
+obj-m += stepgen-ninja.o
+include @LINUXCNC_MODINC@
+EXTRA_CFLAGS += -I"@prepared@" -I"@LINUXCNC_INCLUDE_DIR@"
+EXTRA_CFLAGS += -Werror=implicit-function-declaration -Werror=incompatible-pointer-types
+
+stepgen-ninja.o: @prepared@/stepgen-ninja.c
+	$(ECHO) Compiling realtime $<
+	$(Q)$(CC) -o $@ $(EXTRA_CFLAGS) -c $<

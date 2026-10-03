@@ -74,9 +74,11 @@ may be explored in the future; v0.1.0 supports this interface only.
 - For visualization: OpenGL 3.3, GLFW 3 and a working graphical session.
 - For tests: Python 3 and Bash. The network-namespace test additionally needs
   iproute2 and unprivileged user/network/mount namespaces.
-- For the LinuxCNC example: LinuxCNC 2.9 userspace, its development files, and the
-  original Stepper-Ninja HAL module built with the pinned Board-0 UDP profile.
-  Manual acceptance used LinuxCNC 2.9.10.
+- For the LinuxCNC example: LinuxCNC userspace, its matching development files,
+  and the Stepper-Ninja HAL module built with the pinned Board-0 UDP profile.
+  The [HAL compatibility build](docs/hal-api-compatibility.md) supports the 2.9
+  and 2.10 APIs. Manual acceptance used LinuxCNC 2.9.10; 2.10-pre2 has compile
+  and isolated contract-test coverage, with live acceptance still pending.
 - `sudo`/root for veth/network-namespace setup and HAL module installation.
   Ordinary simulator builds and most tests do not need root or LinuxCNC.
 
@@ -84,7 +86,7 @@ On Debian with the LinuxCNC packages available:
 
 ```bash
 sudo apt-get install git build-essential cmake libglm-dev libgl1-mesa-dev \
-  libglfw3-dev python3 iproute2 linuxcnc-uspace linuxcnc-uspace-dev
+  libglfw3-dev python3 patch iproute2 linuxcnc-uspace linuxcnc-uspace-dev
 ```
 
 ## Build
@@ -117,23 +119,35 @@ unprivileged namespaces. Release validation requires it to run; see the
 Use the separate supplied virtual-machine configuration, with no physical machine
 connected. Install dependencies and build as above first.
 
-### 1. Provide the original LinuxCNC HAL driver
+### 1. Build the Stepper-Ninja LinuxCNC HAL driver
 
 If the matching module is not already installed, obtain the pinned upstream
-revision in a **separate sibling checkout**, build it and install `stepgen-ninja`:
+revision in a **separate sibling checkout**. The project-owned compatibility
+build verifies it and patches a private build-directory copy for the installed
+LinuxCNC API. Neither upstream nor the bundled vendor snapshot is modified:
 
 ```bash
 git clone https://github.com/atrex66/stepper-ninja.git ../stepper-ninja-hal
 git -C ../stepper-ninja-hal checkout --detach eb7e5dfa2e76477e606a47038b07cca5e8a4b424
-cmake -S ../stepper-ninja-hal/hal-driver -B build/original-hal
-cmake --build build/original-hal --target stepgen-ninja
-sudo cmake --install build/original-hal --component stepgen-ninja
+cmake -S compat/stepper-ninja -B build/compat-hal \
+  -DSTEPPER_NINJA_SOURCE="$PWD/../stepper-ninja-hal"
+cmake --build build/compat-hal -j4
+ctest --test-dir build/compat-hal --output-on-failure
 ```
 
-Installation writes the LinuxCNC module directory and replaces an existing module
-of the same name. Keep upstream's default Board-0 UDP profile unchanged: it must
-match the simulator's pinned protocol profile. The minimal bundled protocol/test
-files in `third_party/stepper-ninja/` are not a complete HAL driver distribution.
+The result is `build/compat-hal/stepgen-ninja.so`; this build has no install step.
+For a subsequent manual installation on the Debian userspace package layout:
+
+```bash
+sudo install -m 644 build/compat-hal/stepgen-ninja.so /usr/lib/linuxcnc/modules/stepgen-ninja.so
+```
+
+That explicit installation replaces an existing module of the same name. Use
+headers and build rules from the LinuxCNC installation that will load it. Keep
+upstream's default Board-0 UDP profile unchanged: it must match the simulator's
+pinned protocol profile. The minimal files in `third_party/stepper-ninja/` are
+not a complete HAL driver distribution. See the [compatibility notes](docs/hal-api-compatibility.md)
+for a 2.10 source-tree compile check that requires no installation.
 
 ### 2. Set up virtual networking
 
