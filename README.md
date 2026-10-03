@@ -89,13 +89,10 @@ sudo apt-get install git build-essential cmake libglm-dev libgl1-mesa-dev \
 
 ## Build
 
-Clone this repository using its published clone URL, then run the remaining
-commands from the checkout root:
+Clone the public repository, then run the remaining commands from the checkout root:
 
 ```bash
-# Enter the clone URL of this linuxcnc-sim repository when prompted.
-read -r -p 'linuxcnc-sim clone URL: ' LINUXCNC_SIM_URL
-git clone "$LINUXCNC_SIM_URL" linuxcnc-sim
+git clone https://github.com/FredericM88/linuxcnc-sim.git
 cd linuxcnc-sim
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
