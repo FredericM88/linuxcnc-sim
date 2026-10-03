@@ -243,7 +243,7 @@ konfigurieren oder durch ein anderes Boardprofil ersetzen.
 Terminal A:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 cmake -S . -B build
 cmake --build build -j"$(nproc)"
 sudo ./scripts/setup-veth.sh
@@ -253,7 +253,7 @@ sudo ./scripts/run-simulator.sh --steps-per-unit 400,400,400,400 --units mm,mm,m
 Terminal B, als normaler Benutzer:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 linuxcnc examples/phase3/phase3.ini
 ```
 
@@ -453,7 +453,7 @@ müssen wieder normal sein. Fehler-/Checksum-/Timing-/Overflow-/Gapzähler und
 Sendefehler sollen weiterhin 0 sein. Anschließend:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/teardown-veth.sh
 ```
 

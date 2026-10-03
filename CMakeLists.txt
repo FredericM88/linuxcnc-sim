@@ -141,13 +141,11 @@ if(BUILD_TESTING)
     target_link_libraries(io-tests PRIVATE cnc_sim_core)
     target_compile_options(io-tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME io-unit COMMAND io-tests)
-    # Tests execute the original HAL fragment directly; it is never copied or patched.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c")
-        add_executable(original-hal-inputs tests/original_hal_inputs.c)
-        target_include_directories(original-hal-inputs PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-        target_link_libraries(original-hal-inputs PRIVATE stepper_ninja_original)
-        add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
-    endif()
+    # Execute the unchanged vendored Board-0 HAL fragment directly.
+    add_executable(original-hal-inputs tests/original_hal_inputs.c)
+    target_include_directories(original-hal-inputs PRIVATE "${NINJA_SOURCE}")
+    target_link_libraries(original-hal-inputs PRIVATE stepper_ninja_original)
+    add_test(NAME original-hal-inputs COMMAND original-hal-inputs)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     foreach(test defaults full partial precedence legacy axes axis-units
             origin-symbolic origin-numeric origin-mixed relative-io unknown-section unknown-key

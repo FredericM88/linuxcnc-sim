@@ -1,6 +1,7 @@
 # Phase 4A.1: konfigurierbares Rohteil
 
-Maßgeblich ist die [Spezifikation](../codex_phase4a1_workpiece_configuration.md).
+Historische Architektur der Phase 4A.1; Materialabtrag wurde später in
+[Phase 5](phase5-design.md) ergänzt.
 Diese Erweiterung ersetzt die statische Szenenverwaltung aus Phase 4A.
 Kein Materialabtrag, Tool Sweep, Kollisionsmodell, G54/G55-Abgleich oder neue
 Probe-Semantik. Die Phase-3-Probe bleibt eine unabhängige Ebene in Steps.

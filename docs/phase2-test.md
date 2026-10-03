@@ -3,7 +3,7 @@
 **Aktueller Status: Phase 2 ist abgeschlossen und real mit LinuxCNC getestet.**
 Die erfolgreiche reale Abnahme wurde vom Benutzer bestätigt. Auch Phase 1
 und Phase 3 sind abgeschlossen und real mit LinuxCNC getestet; siehe
-[Projektstand](../README.md#projektstand) und [Phase-3-Abnahme](phase3-test.md).
+[Projektstand](../README.md#current-features) und [Phase-3-Abnahme](phase3-test.md).
 
 ## Ausgangsbasis und unveränderte Kommunikation
 
@@ -150,7 +150,7 @@ beim Beenden verloren. Bei Start über sudo werden Dateien als root angelegt.
 ## Automatisierte Prüfung
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -177,7 +177,7 @@ bewegter LinuxCNC-Maschine neu starten.
 Terminal A:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/setup-veth.sh
 sudo ./scripts/run-simulator.sh --steps-per-unit 400,400,400,400 --units mm,mm,mm,unit
 ```
@@ -187,7 +187,7 @@ Keine `--stats`-Option verwenden: Der Standard ist jetzt die feste Oberfläche.
 Terminal B, als normaler Benutzer:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 linuxcnc examples/phase1/phase1.ini
 ```
 
@@ -232,7 +232,7 @@ UDP müssen weiterlaufen, Terminal darf dabei nicht scrollen.
 Terminal C:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 python3 - <<'PY'
 import csv
 from pathlib import Path
@@ -281,7 +281,7 @@ Das Terminal muss normal echoen, und die Abschlussstatistik soll keine neuen
 Protokoll-/Sende-/Timingfehler oder ID-Lücken zeigen. Danach:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/teardown-veth.sh
 ```
 

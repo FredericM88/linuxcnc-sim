@@ -29,7 +29,7 @@ static int hal_pin_bit_newf(int direction, unsigned char **pin, int component, c
     snprintf(names[pin_count],80,"%s",name); ++pin_count; return 0;
 }
 static void rtapi_print_msg(int level,const char *format,...) { (void)level;(void)format; }
-#include "stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c"
+#include "hal-driver/modules/breakoutboard_hal_0.c"
 #define CHECK(x) do {if(!(x)){fprintf(stderr,"line %d: %s\n",__LINE__,#x);return 1;}}while(0)
 int main(void) {
     module_data_t data={0}; char name[80];

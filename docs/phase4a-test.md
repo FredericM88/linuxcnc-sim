@@ -87,7 +87,7 @@ sichtbar. Alle Vendor-/Originaldateien blieben unverändert.
 Im angemeldeten Desktop-Terminal:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 ./build/cnc-sim --render --bind 127.0.0.1 --port 8888 --steps-per-unit 400,400,400,400
 ```
 
@@ -113,7 +113,7 @@ Phase-3-Schaltersuchfahrt kann kleine Referenzoffsets erzeugen, siehe Phase 3.
 Terminal A, als normaler angemeldeter Desktopbenutzer:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/setup-veth.sh
 sudo ip netns exec cnc-sim-ns runuser -u "$USER" -- env \
   DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
@@ -133,7 +133,7 @@ unverändert verfügbar.
 Terminal B:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 linuxcnc examples/phase1/phase1.ini
 ```
 

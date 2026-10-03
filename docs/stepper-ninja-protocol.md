@@ -1,7 +1,9 @@
 # Stepper-Ninja: Wire-Protokoll und Datenfluss
 
-Stand der Analyse: 26.09.2026. Maßgeblich ist ausschließlich der lokale Checkout
-`stepper-ninja/`, Commit `eb7e5dfa2e76477e606a47038b07cca5e8a4b424`.
+Stand der Analyse: 26.09.2026. Maßgeblich ist ausschließlich der Upstream-Commit
+`eb7e5dfa2e76477e606a47038b07cca5e8a4b424`. Mitgelieferte Quellen liegen unter
+`third_party/stepper-ninja/`; andere Quellverweise sind auf diesen Commit
+festgelegte Upstream-Permalinks.
 Die nachstehenden Quellverweise nennen Dateien und Zeilen dieses Commits. Die
 Ergebnisse beschreiben den implementierten Code einschließlich seiner Grenzen;
 Kommentare und Beispielkonfigurationen sind nicht immer aktuell.
@@ -13,27 +15,27 @@ temporären C-Analyseprogramm direkt gegen die Originalheader und
 `transmission.c` geprüft. Ein LinuxCNC-/Hardware-Lauf war nicht Teil dieser
 ursprünglichen Analyse. Inzwischen sind Phase 1–3 implementiert, abgeschlossen
 und real mit LinuxCNC getestet; den aktuellen Stand beschreibt die
-[README](../README.md#projektstand). Die Originalquellen bleiben unverändert.
+[README](../README.md#current-features). Die Originalquellen bleiben unverändert.
 
 ## 1. Verbindliche Standardkonfiguration
 
 | Eigenschaft | Effektiver Wert | Quelle |
 |---|---:|---|
-| `breakout_board` | 0, direkte GPIOs | [config.h:20–26](../stepper-ninja/firmware/inc/config.h#L20) |
-| `stepgens` | 4 | [config.h:31](../stepper-ninja/firmware/inc/config.h#L31) |
-| `encoders` | 3 | [config.h:38](../stepper-ninja/firmware/inc/config.h#L38) |
-| `pwm_count` / `use_pwm` | 1 / 0 | [config.h:49–50](../stepper-ninja/firmware/inc/config.h#L49) |
-| `ANALOG_CH` | nicht definiert, in `#if` effektiv 0 | [footer.h:12–200](../stepper-ninja/firmware/inc/footer.h#L12) |
-| `raspberry_pi_spi` | 0, UDP | [config.h:59](../stepper-ninja/firmware/inc/config.h#L59) |
-| `use_timer_interrupt` | 0, kein Software-Schrittring | [config.h:74](../stepper-ninja/firmware/inc/config.h#L74) |
-| `encoder_pio_version` | `ENCODER_PIO_SUBSTEP`, Wert 1 | [config.h:76–78](../stepper-ninja/firmware/inc/config.h#L76), [internals.h:140–145](../stepper-ninja/firmware/inc/internals.h#L140) |
-| `use_stepcounter` / `debug_mode` | 0 / 0 | [footer.h:202–203](../stepper-ninja/firmware/inc/footer.h#L202) |
-| `pico_clock` | 200.000.000 Hz, 5 ns/Zyklus | [footer.h:217](../stepper-ninja/firmware/inc/footer.h#L217) |
-| `default_pulse_width` | 2500 ns | [config.h:71](../stepper-ninja/firmware/inc/config.h#L71) |
-| `default_step_scale` | 1000 Schritte/Maschineneinheit | [config.h:72](../stepper-ninja/firmware/inc/config.h#L72) |
-| Netzwerk ab Werk | 192.168.0.177:8888, Netzmaske 255.255.255.0, Gateway 192.168.0.1 | [config.h:10–17](../stepper-ninja/firmware/inc/config.h#L10) |
+| `breakout_board` | 0, direkte GPIOs | [config.h:20–26](../third_party/stepper-ninja/firmware/inc/config.h#L20) |
+| `stepgens` | 4 | [config.h:31](../third_party/stepper-ninja/firmware/inc/config.h#L31) |
+| `encoders` | 3 | [config.h:38](../third_party/stepper-ninja/firmware/inc/config.h#L38) |
+| `pwm_count` / `use_pwm` | 1 / 0 | [config.h:49–50](../third_party/stepper-ninja/firmware/inc/config.h#L49) |
+| `ANALOG_CH` | nicht definiert, in `#if` effektiv 0 | [footer.h:12–200](../third_party/stepper-ninja/firmware/inc/footer.h#L12) |
+| `raspberry_pi_spi` | 0, UDP | [config.h:59](../third_party/stepper-ninja/firmware/inc/config.h#L59) |
+| `use_timer_interrupt` | 0, kein Software-Schrittring | [config.h:74](../third_party/stepper-ninja/firmware/inc/config.h#L74) |
+| `encoder_pio_version` | `ENCODER_PIO_SUBSTEP`, Wert 1 | [config.h:76–78](../third_party/stepper-ninja/firmware/inc/config.h#L76), [internals.h:140–145](../third_party/stepper-ninja/firmware/inc/internals.h#L140) |
+| `use_stepcounter` / `debug_mode` | 0 / 0 | [footer.h:202–203](../third_party/stepper-ninja/firmware/inc/footer.h#L202) |
+| `pico_clock` | 200.000.000 Hz, 5 ns/Zyklus | [footer.h:217](../third_party/stepper-ninja/firmware/inc/footer.h#L217) |
+| `default_pulse_width` | 2500 ns | [config.h:71](../third_party/stepper-ninja/firmware/inc/config.h#L71) |
+| `default_step_scale` | 1000 Schritte/Maschineneinheit | [config.h:72](../third_party/stepper-ninja/firmware/inc/config.h#L72) |
+| Netzwerk ab Werk | 192.168.0.177:8888, Netzmaske 255.255.255.0, Gateway 192.168.0.1 | [config.h:10–17](../third_party/stepper-ninja/firmware/inc/config.h#L10) |
 | Firmware-Verbindungstimeout ab Werk | 1.000.000 µs = 1 s | gleiche Quelle |
-| Beispiel-Servozeit | 1.000.000 ns = 1 ms | [stepper-ninja.ini:74–84](../stepper-ninja/hal-driver/test_config/stepper-ninja.ini#L74) |
+| Beispiel-Servozeit | 1.000.000 ns = 1 ms | [stepper-ninja.ini:74–84](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.ini#L74) |
 
 **UDP-Nutzdaten: PC→Pico 37 Byte, Pico→PC 61 Byte.** Auch bei `use_pwm=0`
 bleiben beide PWM-Arrays im Paket: Entscheidend ist `pwm_count`, nicht `use_pwm`.
@@ -45,9 +47,9 @@ Alias von `stepgen-ninja.c`. Die gemeinsam verwendete Timingtabelle liegt unter
 `firmware/modules/inc/pio_settings.h`. Die gleichnamige Datei im Repository-Wurzelverzeichnis
 hat im untersuchten Stand identische 299 Datensätze, aber einen anderen
 Generierungszeitstempel. Maßgeblich ist die eingebundene Moduldatei.
-Belege: [make_symlinks.sh:31–38](../stepper-ninja/hal-driver/make_symlinks.sh#L31),
-[stepgen-ninja.c:13–15](../stepper-ninja/hal-driver/stepgen-ninja.c#L13),
-[Firmware-CMakeLists.txt:50–60, 69–71](../stepper-ninja/firmware/CMakeLists.txt#L50).
+Belege: [make_symlinks.sh:31–38](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/make_symlinks.sh#L31),
+[stepgen-ninja.c:13–15](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L13),
+[Firmware-CMakeLists.txt:50–60, 69–71](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/CMakeLists.txt#L50).
 
 ## 2. Byteformat
 
@@ -55,7 +57,7 @@ Die beiden Strukturen sind durch `#pragma pack(push, 1)` und `pop` vollständig
 gepackt. Es gibt keine Paddingbytes, keinen zusätzlichen Anwendungsheader und
 keinen Stringabschluss. Die letzte Position ist immer die ein Byte lange
 Prüfsumme. Jeder UDP-Datagramm-Payload enthält genau eine Struktur.
-Quelle: [transmission.h:14–49](../stepper-ninja/firmware/modules/inc/transmission.h#L14).
+Quelle: [transmission.h:14–49](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L14).
 
 Es wird direkt der Strukturspeicher gesendet: **native Byteordnung**, keine
 `htonl`/`ntohl`-Konvertierung der Nutzdaten. Für Pico und die üblichen LinuxCNC-
@@ -63,8 +65,8 @@ x86-/ARM-Little-Endian-Systeme bedeutet das **Little Endian** für alle 16-/32-B
 Felder; negative `int32_t`-Encoderwerte erscheinen im Zweierkomplement.
 Ein portabler Empfänger muss dieses konkrete Little-Endian-Format lesen.
 Netzwerkadressen und Ports werden separat in Netzwerkbyteordnung behandelt.
-Quellen: [stepgen-ninja.c:450–464](../stepper-ninja/hal-driver/stepgen-ninja.c#L450),
-[main.c:698–722, 760–789](../stepper-ninja/firmware/src/main.c#L698).
+Quellen: [stepgen-ninja.c:450–464](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L450),
+[main.c:698–722, 760–789](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L698).
 
 ### 2.1 PC→Pico, Standardlayout (37 Byte)
 
@@ -83,7 +85,7 @@ Quellen: [stepgen-ninja.c:450–464](../stepper-ninja/hal-driver/stepgen-ninja.c
 | 35 | 1 | `uint8_t packet_id` | Sendezähler modulo 256 |
 | 36 | 1 | `uint8_t checksum` | Prüfsumme über Bytes 0–35 |
 
-Quelle: [transmission.h:16–32](../stepper-ninja/firmware/modules/inc/transmission.h#L16).
+Quelle: [transmission.h:16–32](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L16).
 
 ### 2.2 Pico→PC, Standardlayout (61 Byte)
 
@@ -103,7 +105,7 @@ Quelle: [transmission.h:16–32](../stepper-ninja/firmware/modules/inc/transmiss
 | 59 | 1 | `uint8_t packet_id` | ID der verarbeiteten Anfrage |
 | 60 | 1 | `uint8_t checksum` | Prüfsumme über Bytes 0–59 |
 
-Quelle: [transmission.h:10–12, 35–48](../stepper-ninja/firmware/modules/inc/transmission.h#L35).
+Quelle: [transmission.h:10–12, 35–48](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L35).
 Insbesondere `inputs` und `jitter` sind nicht 32-Bit-ausgerichtet. Ein C++-Parser
 darf keine natürliche Ausrichtung voraussetzen.
 
@@ -154,7 +156,7 @@ Die Boardzweige in `footer.h` ergeben folgende Profile, falls dieses Board in
 | 3 | 0 | 0 | 4 | 4 | 29 | 73 | Analog-Board; Konfigurationskommentar markiert es als unvollständig |
 | 100 | 4 | 0 | 2 | 2 | 37 | 49 | erzwingt SPI |
 
-Belege: [footer.h:12–200](../stepper-ninja/firmware/inc/footer.h#L12).
+Belege: [footer.h:12–200](../third_party/stepper-ninja/firmware/inc/footer.h#L12).
 `encoder_pio_version`, `use_stepcounter`, `use_timer_interrupt`, `use_pwm`,
 `pico_clock`, GPIO-Zuordnungen, `io_expanders`, `toolchanger_encoder` und `debug_mode`
 beeinflussen Verhalten bzw. Interpretation, aber bei konstanten S/P/E/A nicht die
@@ -166,9 +168,9 @@ Laufzeitverhandlung.
 Damit ist für die tatsächlichen Sender/Empfänger eine Paketgröße von höchstens
 255 Byte erforderlich; darüber werden Größen abgeschnitten. Die Formeln allein
 heben diese Implementierungsgrenze nicht auf.
-Belege: [stepgen-ninja.c:56–57, 274–290](../stepper-ninja/hal-driver/stepgen-ninja.c#L274),
-[main.c:120–122](../stepper-ninja/firmware/src/main.c#L120),
-[transmission.c:6–22](../stepper-ninja/firmware/modules/transmission.c#L6).
+Belege: [stepgen-ninja.c:56–57, 274–290](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L274),
+[main.c:120–122](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L120),
+[transmission.c:6–22](../third_party/stepper-ninja/firmware/modules/transmission.c#L6).
 
 ## 3. LinuxCNC → Schrittwort → Firmware
 
@@ -178,8 +180,8 @@ Das Beispiel verbindet `joint.0.motor-pos-cmd` über das Signal `Xpos` mit
 `stepgen-ninja.0.stepgen.0.command`; entsprechend Y und Z. Der HAL-Treiber legt
 für jeden Kanal einen `hal_float_t *command[i]` an. Der vom HAL übergebene
 Callbackparameter `period` ist die Threadperiode in ns.
-Belege: [Test-HAL:2–25](../stepper-ninja/hal-driver/test_config/stepper-ninja.hal#L2),
-[stepgen-ninja.c:98–105, 940–950](../stepper-ninja/hal-driver/stepgen-ninja.c#L940).
+Belege: [Test-HAL:2–25](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.hal#L2),
+[stepgen-ninja.c:98–105, 940–950](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L940).
 
 `process-send` leert den Sendepuffer, prüft den Watchdog, setzt `enc_control`,
 berechnet bei laufendem Watchdog die Schrittwörter, packt Board-Ausgänge und
@@ -187,7 +189,7 @@ gegebenenfalls PWM, trägt ID und Prüfsumme ein und ruft `_send()` auf.
 `enable` und `mode` sind lokale HAL-Eingänge; sie werden nicht als eigene Felder
 übertragen. `io-ready-in/out` ist ein lokaler Handshake, keine globale Sendesperre
 und kein eigenes Wire-Feld.
-Quelle: [stepgen-ninja.c:596–768](../stepper-ninja/hal-driver/stepgen-ninja.c#L596).
+Quelle: [stepgen-ninja.c:596–768](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L596).
 
 ### 3.2 Exakte Bedeutung von `stepgen_command[n]`
 
@@ -214,9 +216,9 @@ D = (W & 0x7fffffff) >> 10
 delta_steps = (direction == 1 ? +N : -N), nur wenn W != 0
 ```
 
-Belege: [stepgen-ninja.c:640–644, 657–707](../stepper-ninja/hal-driver/stepgen-ninja.c#L640),
-[main.c:198–214](../stepper-ninja/firmware/src/main.c#L198),
-[freq_generator.pio:18–32](../stepper-ninja/firmware/pio/freq_generator.pio#L18).
+Belege: [stepgen-ninja.c:640–644, 657–707](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L640),
+[main.c:198–214](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L198),
+[freq_generator.pio:18–32](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/pio/freq_generator.pio#L18).
 Die Firmware setzt `dir_pin[i]` sofort auf `W>>31`, schreibt `W&0x7fffffff`
 blockierend in die PIO-TX-FIFO und führt selbst keine Positions-/Geschwindigkeitsskalierung
 mehr durch. Ein Nullwort stoppt einen schon laufenden oder gepufferten Burst nicht.
@@ -226,7 +228,7 @@ mehr durch. Ein Nullwort stoppt einen schon laufenden oder gepufferten Burst nic
 Pro Kanal, in der tatsächlichen Reihenfolge:
 
 1. `f_command = float(command + 10000)`. Der feste Offset 10000 ist in
-   [stepgen-ninja.c:73–78](../stepper-ninja/hal-driver/stepgen-ninja.c#L73) fest kodiert.
+   [stepgen-ninja.c:73–78](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L73) fest kodiert.
 2. Beim ersten Sendelauf wird `prev_pos = int64(f_command * scale)` gesetzt.
    Die Umwandlung schneidet für darstellbare Werte gegen null ab.
 3. Bei `enable=0`: Nullwort und `continue`; `prev_pos` wird danach nicht laufend
@@ -239,7 +241,7 @@ Pro Kanal, in der tatsächlichen Reihenfolge:
 7. Bei N>0 wird `timing[N] | (sign<<31)` übernommen, sonst Null.
 8. `feedback=command`, `first_data=false`, Übertragung nach `stepgen_command[i]`.
 
-Quelle: [stepgen-ninja.c:647–716](../stepper-ninja/hal-driver/stepgen-ninja.c#L647).
+Quelle: [stepgen-ninja.c:647–716](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L647).
 `scale` ist Schritte pro HAL-Positionseinheit, z.B. Schritte/mm oder Schritte/Grad;
 das Protokoll selbst benennt keine Einheit und überträgt `scale` nicht.
 Negative Skalierung invertiert im Positionsmodus auch die Richtung.
@@ -254,7 +256,7 @@ HAL-Bahn berücksichtigt werden. Wiederaktivieren kann ein großes Delta erzeuge
 Die Rückmeldung `.stepgen.i.feedback` ist eine **lokale Kopie des Sollwerts**,
 keine Bestätigung ausgeführter Schritte und kein vom Pico empfangener Motorstand.
 Das Test-HAL verbindet genau diesen Wert mit `motor-pos-fb`
-([Test-HAL:19–21](../stepper-ninja/hal-driver/test_config/stepper-ninja.hal#L19)).
+([Test-HAL:19–21](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.hal#L19)).
 
 ### 3.4 Geschwindigkeitsmodus (`mode != 0`)
 
@@ -268,7 +270,7 @@ W              = N > 0 ? timing[N] | direction<<31 : 0
 max_f          = uint32(1 / (pulse_width * 2e-9))
 ```
 
-Quelle: [stepgen-ninja.c:626–629, 687–710](../stepper-ninja/hal-driver/stepgen-ninja.c#L687).
+Quelle: [stepgen-ninja.c:626–629, 687–710](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L687).
 Bei 2500 ns gilt `max_f=200000` Schritte/s; bei 1 ms maximal 200 Schritte
 pro Callback nach dieser Begrenzung. Kleine Geschwindigkeiten können durch das
 Abrunden dauerhaft null Schritte ergeben. Ein negativer `scale` dreht hier die
@@ -285,7 +287,7 @@ kann den gewählten Modus aus den Paketen nicht eindeutig feststellen.
 `cycle_time_ns=5`, schneidet auf einen ganzzahligen Zykluswert ab und sucht den
 nächstgelegenen `high_cycles`-Wert. Bei Gleichstand gewinnt der frühere Index.
 Außerhalb der Tabelle wird Index 0 bzw. 298 gewählt.
-Beleg: [stepgen-ninja.c:198–205, 391–413](../stepper-ninja/hal-driver/stepgen-ninja.c#L391).
+Beleg: [stepgen-ninja.c:198–205, 391–413](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L391).
 
 Die 299 Tripel `(sety,nop,high_cycles)` können ohne Originalheader exakt aus
 folgender Datendefinition rekonstruiert werden:
@@ -296,10 +298,10 @@ folgender Datendefinition rekonstruiert werden:
 3. Bei gleichem `high_cycles` nur das erste Tripel behalten.
 
 Dies wurde gegen alle Tripel des Originalheaders verglichen. Quelle:
-[pio_setting_generator.py:10–33](../stepper-ninja/hal-driver/pio_setting_generator.py#L10).
+[pio_setting_generator.py:10–33](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/pio_setting_generator.py#L10).
 Index 0: `(2,2,12)`, Index 235: `(24,18,500)`, Index 298: `(31,23,800)`.
 Damit entspricht der Standard 2500 ns dem Index **235 = 0x00eb**.
-Tabellenquelle: [pio_settings.h:15–314](../stepper-ninja/firmware/modules/inc/pio_settings.h#L15).
+Tabellenquelle: [pio_settings.h:15–314](../third_party/stepper-ninja/firmware/modules/inc/pio_settings.h#L15).
 
 Nur bei Änderung von `pulse_width` wird `timing[1..1023]` neu berechnet:
 
@@ -316,13 +318,13 @@ Das HAL-Feld `.period` wird zwar am Callbackanfang nach `total_cycles` gelesen,
 für die eigentliche Tabellenerzeugung aber durch den aus dem Callbackparameter
 berechneten Wert überschrieben. `.period` ist kein Wire-Feld. Eine Änderung
 der Threadperiode allein erneuert die Tabelle nicht.
-Quelle: [stepgen-ninja.c:67–71, 602, 630–645](../stepper-ninja/hal-driver/stepgen-ninja.c#L630).
+Quelle: [stepgen-ninja.c:67–71, 602, 630–645](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L630).
 
 Core 1 der Firmware liest `pio_timing` und ersetzt die PIO-Instruktionen
 `set y` und `nop [delay]` entsprechend `sety&31` und `nop&31`. Das erfolgt
 asynchron zur Paketauswertung auf Core 0; Timingänderungen sind nicht atomar
 mit dem zugehörigen Schrittburst. Quelle:
-[main.c:393–410](../stepper-ninja/firmware/src/main.c#L393).
+[main.c:393–410](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L393).
 
 Das PIO-Programm liest die unteren zehn Bits nach X und lässt die übrigen Bits
 als Low-Wartewert im OSR. Seine Schleifen erzeugen X+1 Pulse. Aus den Instruktionen
@@ -333,9 +335,9 @@ ist keine exakte Messung der Pin-High-Zeit. Das Ende eines Bursts und der nächs
 `pull`/`out` bringen zusätzliche Instruktionen und gegebenenfalls Wartezeit.
 Die Standardkorrektur 6 kompensiert den inneren Schleifenaufwand; im Ringmodus
 fehlt diese Subtraktion. Quelle und Herleitung:
-[freq_generator.pio:16–32](../stepper-ninja/firmware/pio/freq_generator.pio#L16).
+[freq_generator.pio:16–32](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/pio/freq_generator.pio#L16).
 Der Firmwarecode verwendet die PIO-Standardkonfiguration ohne eigenen Taktteiler
-([main.c:598–601](../stepper-ninja/firmware/src/main.c#L598)); Rechtsverschiebung
+([main.c:598–601](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L598)); Rechtsverschiebung
 und Teiler 1 sind SDK-Vorgaben, ergänzend überprüft am
 [offiziellen Pico-SDK-Header, `pio_get_default_sm_config`](https://github.com/raspberrypi/pico-sdk/blob/master/src/rp2_common/hardware_pio/include/hardware/pio.h).
 
@@ -351,13 +353,13 @@ und ein zu großes D kann beim Linksverschieben Richtungs-/Datenbits zerstören.
 bei üblichen 32-Bit-Ints ist das eine C-Sprachstandard-Falle. Der Decoder muss
 den resultierenden Bitwert unsigned behandeln. Diese Fälle haben keine portable,
 wohldefinierte zusätzliche Protokollsemantik.
-Belege: [stepgen-ninja.c:599, 626, 640–705](../stepper-ninja/hal-driver/stepgen-ninja.c#L640).
+Belege: [stepgen-ninja.c:599, 626, 640–705](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L640).
 
 Auch die Firmware validiert Timingindizes nicht korrekt: Der Tabellenzugriff
 passiert vor der Prüfung, und verglichen wird mit `sizeof(pio_settings)` (1196
 Byte), nicht mit 299 Einträgen. Für gültige Originalpakete gilt Index 0–298;
 Werte darüber sind kein definiertes Sonderkommando.
-Quelle: [main.c:394–402](../stepper-ninja/firmware/src/main.c#L394).
+Quelle: [main.c:394–402](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L394).
 
 ## 4. UDP-Verbindung, Empfang und Fehlerzustände
 
@@ -368,10 +370,10 @@ Semikolon. Die Standard-IP aus `config.h` wird nicht automatisch als HAL-
 Parameter eingesetzt; das Beispiel übergibt `192.168.0.177:8888` ausdrücklich.
 `inet_pton(AF_INET,...)` akzeptiert numerische IPv4-Adressen, keine DNS-Namen.
 Die Parserprüfung erlaubt Ports 0–65535; Port 0 ist dabei kein sinnvoller
-Standardpeer. Belege: [stepgen-ninja.c:33–36, 770–837](../stepper-ninja/hal-driver/stepgen-ninja.c#L770),
-[Minimal-HAL:1](../stepper-ninja/hal-driver/test_config/stepper-ninja-minimal.hal#L1).
+Standardpeer. Belege: [stepgen-ninja.c:33–36, 770–837](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L770),
+[Minimal-HAL:1](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja-minimal.hal#L1).
 
-Die Initialisierung in [stepgen-ninja.c:307–345](../stepper-ninja/hal-driver/stepgen-ninja.c#L307)
+Die Initialisierung in [stepgen-ninja.c:307–345](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L307)
 führt aus:
 
 1. `socket(AF_INET, SOCK_DGRAM, 0)`.
@@ -387,13 +389,13 @@ führt aus:
 Routingflag beschränkt die normale Nutzung auf direkt erreichbare Ziele;
 der Funktionsrückgabewert wird von `process-send` ignoriert. Auch bei Sendefehler
 wird die ID weitergezählt und die Positionsbasis bereits fortgeschrieben.
-Belege: [stepgen-ninja.c:450–455, 755–758](../stepper-ninja/hal-driver/stepgen-ninja.c#L450).
+Belege: [stepgen-ninja.c:450–455, 755–758](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L450).
 
 `process-recv` versucht **ein** `recvfrom` pro Aufruf; es leert nicht die gesamte
 Socket-Warteschlange. Kein Paket/EAGAIN und abweichende Länge führen zu keiner
 Datenübernahme. Da ohne `MSG_TRUNC` in einen genau 61 Byte großen Puffer gelesen
 wird, kann ein längeres Datagramm auf 61 Byte gekürzt werden und die Längenprüfung
-trotzdem bestehen. Quelle: [stepgen-ninja.c:480–515](../stepper-ninja/hal-driver/stepgen-ninja.c#L480).
+trotzdem bestehen. Quelle: [stepgen-ninja.c:480–515](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L480).
 
 Besonders relevant: `recvfrom` schreibt seine Quelladresse direkt nach
 `d->remote_addr`, also in das Ziel des nächsten `sendto`. Es gibt keine Prüfung
@@ -416,13 +418,13 @@ hergestellt. Der Initialwert `TIMEOUT_US=100000` in `main.c` ist deshalb **nicht
 der effektive Werksdefault von 1 s. Die Standard-Flashkonfiguration setzt
 `.dhcp=1` (statisch). Im analysierten Kommunikationspfad wird `wizchip_setnetinfo`
 verwendet; ein laufender DHCP-Aushandlungsprozess ist dort nicht implementiert.
-Quellen: [flash_config.c:19–29, 118–143](../stepper-ninja/firmware/modules/flash_config.c#L19),
-[serial_terminal.c:42–52](../stepper-ninja/firmware/modules/serial_terminal.c#L42),
-[main.c:137, 486–500, 1137–1148](../stepper-ninja/firmware/src/main.c#L486).
+Quellen: [flash_config.c:19–29, 118–143](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/flash_config.c#L19),
+[serial_terminal.c:42–52](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/serial_terminal.c#L42),
+[main.c:137, 486–500, 1137–1148](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L486).
 
 WIZnet-Hardwaresocket **0** wird mit `socket(0, Sn_MR_UDP, port, 0)` geöffnet.
 Es gibt auf der Firmwareseite kein POSIX-`bind()`; der Port wird beim Öffnen des
-Chipsockets festgelegt. [main.c:1160–1165](../stepper-ninja/firmware/src/main.c#L1160).
+Chipsockets festgelegt. [main.c:1160–1165](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L1160).
 Die IPv4-Konfiguration des Chips bestimmt die lokale Adresse. W5100S und W5500
 ändern das Anwendungsformat nicht.
 
@@ -431,7 +433,7 @@ Diese eigene Funktion liest zunächst den **8-Byte-WIZnet-RX-Metadatenheader**:
 4 Byte Absender-IP, 2 Byte Absenderport, 2 Byte Nutzdatenlänge, die letzten
 beiden Felder Big Endian. Diese acht Bytes sind **kein Bestandteil unseres
 37-Byte-UDP-Payloads** und werden nicht in dessen Prüfsumme einbezogen.
-Quellen: [main.c:760–789, 988–1023](../stepper-ninja/firmware/src/main.c#L760).
+Quellen: [main.c:760–789, 988–1023](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L760).
 
 Die Hilfsfunktion ist blockierend: Sie wartet auf RX-Daten oder Socket-Close und
 auf die Fertigstellung von Chipbefehlen. Sie liefert `min(buffer_length,data_len)`.
@@ -449,11 +451,11 @@ spätere Anfragen von einem anderen Absender ändern dieses gespeicherte Chipzie
 nicht. Die Funktion wartet blockierend auf `SENDOK` oder den Hardwarestatus
 `TIMEOUT`; eine eigene zeitliche Softwaregrenze besitzt diese Warteschleife
 nicht. Ihr Rückgabewert wird ignoriert.
-Quellen: [main.c:698–722, 1015–1023](../stepper-ninja/firmware/src/main.c#L698).
+Quellen: [main.c:698–722, 1015–1023](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L698).
 
 ### 4.3 Empfangsprüfung in tatsächlicher Reihenfolge
 
-Firmware, [main.c:792–909](../stepper-ninja/firmware/src/main.c#L792):
+Firmware, [main.c:792–909](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L792):
 
 1. Nach der Längenprüfung: Empfangsabstand nach `jitter` schreiben und
    `last_packet_time` aktualisieren — **vor** der Prüfsummenprüfung.
@@ -474,9 +476,9 @@ Auch `enc_control`, `pio_timing` und Board-Aktualisierungen auf Core 1 lesen
 weiter den gemeinsamen Empfangspuffer. Ein schlechtes Paket wird somit nicht
 vollständig und nebenwirkungsfrei verworfen. Das ist ein Originalcodebefund,
 kein zusätzliches Protokollfeature.
-Quellen: [main.c:312–410, 792–889](../stepper-ninja/firmware/src/main.c#L312).
+Quellen: [main.c:312–410, 792–889](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L312).
 
-HAL, [stepgen-ninja.c:480–594](../stepper-ninja/hal-driver/stepgen-ninja.c#L480):
+HAL, [stepgen-ninja.c:480–594](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L480):
 
 1. Bei abgelaufenem Watchdog gar nicht empfangen.
 2. Ein Datagramm lesen; Länge vergleichen.
@@ -485,12 +487,12 @@ HAL, [stepgen-ninja.c:480–594](../stepper-ninja/hal-driver/stepgen-ninja.c#L48
    Board-Inputs aktualisieren. **Keine Prüfung der Antwort-ID.**
 
 Im HAL-Prüfsummenfehlerzweig steht `d->connected = 0` statt `*d->connected = 0`
-([Zeile 506](../stepper-ninja/hal-driver/stepgen-ninja.c#L506)). Dadurch wird der
+([Zeile 506](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L506)). Dadurch wird der
 Pinzeiger gelöscht; der nächste gültige Empfang dereferenziert ihn in Zeile 514.
 Das ist ein konkreter Fehlerpfad mit möglichem Absturz, der nicht als korrekte
 Protokollbehandlung übernommen werden sollte. `connected` und `index-enable`
 sind zudem als `HAL_IN` registriert, obwohl der Treiber sie beschreibt
-([Zeilen 879 und 968](../stepper-ninja/hal-driver/stepgen-ninja.c#L879)).
+([Zeilen 879 und 968](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L879)).
 
 ### 4.4 Watchdogs
 
@@ -504,7 +506,7 @@ setzt zusätzlich die Ringpins zurück. Weil dann auch kein Empfang mehr das
 Alter zurücksetzt, gibt es im normalen Ablauf keine automatische Erholung.
 Der Logtext verlangt einen LinuxCNC-Neustart. Ohne Aufruf von `watchdog-process`
 beginnt der Sender nicht regulär zu senden.
-Belege: [stepgen-ninja.c:367–388, 484–490, 605–607, 623, 760–766, 855–864](../stepper-ninja/hal-driver/stepgen-ninja.c#L367).
+Belege: [stepgen-ninja.c:367–388, 484–490, 605–607, 623, 760–766, 855–864](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L367).
 
 Core 1 der Firmware prüft reale Mikrosekunden seit `last_packet_time`; bei
 `time_diff > TIMEOUT_US` stoppt es den Softwaretimer, leert dessen Ring, setzt
@@ -514,7 +516,7 @@ Stelle keine PIO-TX-FIFOs und bricht laufende Schrittbursts nicht ausdrücklich
 ab. Bei `use_pwm=1` enthält dieser allgemeine Timeoutzweig keine explizite
 PWM-Duty-Nullsetzung. Board-spezifische Abschaltungen stehen in den jeweiligen
 Modulen. Das ist vom Hardware-Reboot über `reset_with_watchdog()` zu
-unterscheiden. Belege: [main.c:312–355, 674–677, 970–983](../stepper-ninja/firmware/src/main.c#L312).
+unterscheiden. Belege: [main.c:312–355, 674–677, 970–983](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L312).
 
 ## 5. Prüfsumme vollständig
 
@@ -534,7 +536,7 @@ ausgenommen; dessen vorheriger Inhalt ist irrelevant. Im Code wird ein
 `char*` gelesen, aber der Tabellenindex ausdrücklich nach `uint8_t` gewandelt,
 sodass signed `char` keinen negativen Index erzeugt. Die Zuweisung nach jeder
 Addition in `uint8_t checksum` reduziert modulo 256.
-Quelle: [transmission.c:6–22](../stepper-ninja/firmware/modules/transmission.c#L6).
+Quelle: [transmission.c:6–22](../third_party/stepper-ninja/firmware/modules/transmission.c#L6).
 
 `rx_checksum_ok` prüft PC→Pico, `tx_checksum_ok` prüft Pico→PC: Die Namen sind
 aus Firmwareperspektive. Der HAL-Sender berechnet selbst mit `calculate_checksum`,
@@ -563,8 +565,8 @@ e0: 9a 8e ca 2c b0 57 77 59 aa b9 f1 b4 90 0f af 8b
 f0: d0 f9 1f 4e 72 52 ce 70 91 35 f3 8d bf db 4d 9e
 ```
 
-Quelle: [jump_table.h:6–23](../stepper-ninja/firmware/modules/inc/jump_table.h#L6),
-Copyright/Lizenz: [LICENSE.txt:1–21](../stepper-ninja/LICENSE.txt#L1), MIT,
+Quelle: [jump_table.h:6–23](../third_party/stepper-ninja/firmware/modules/inc/jump_table.h#L6),
+Copyright/Lizenz: [LICENSE.txt:1–21](../third_party/stepper-ninja/LICENSE.txt#L1), MIT,
 Copyright (c) 2025 Zsolt Viola. Die Tabelle ist eine feste Permutation von
 0–255. Ihre Reihenfolge darf nicht neu erzeugt oder beliebig verändert werden.
 Da die Beiträge nur addiert werden, erkennt diese Prüfsumme z.B. eine reine
@@ -573,7 +575,7 @@ Byte, sie fügt keine Reihenfolgeprüfung hinzu.
 
 Die ähnlich benannte Flash-Prüfsumme ist eine einfache Summe ohne Jump-Tabelle
 und gehört nicht zum UDP-Protokoll
-([flash_config.c:41–46](../stepper-ninja/firmware/modules/flash_config.c#L41)).
+([flash_config.c:41–46](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/flash_config.c#L41)).
 Die Variablen `checksum_index` und `checksum_index_in` sowie ältere Deklarationen
 wie `xor_checksum` definieren keinen zusätzlichen Wire-Algorithmus.
 
@@ -586,13 +588,13 @@ aber nicht bei den frühen Watchdog-Rückgaben. Im Initialisierungsblock wird
 `tx_counter` nicht explizit gesetzt: Eine erste ID 0 setzt den üblichen
 nullinitialisierten HAL-Speicher voraus. Das Protokoll verlangt keine feste
 Start-ID, weil die Firmware Abweichungen synchronisiert.
-Belege: [stepgen-ninja.c:190, 755–758, 839–864](../stepper-ninja/hal-driver/stepgen-ninja.c#L755).
+Belege: [stepgen-ninja.c:190, 755–758, 839–864](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L755).
 
 Firmwarezustand `uint8_t rx_counter=0` ist die **nächste erwartete ID**. Bei
 Ungleichheit zur empfangenen ID wird `packet loss` ausgegeben und
 `rx_counter=received_id` gesetzt. Die Antwort erhält diesen Wert; nach
 `handle_data`/Sendeversuch wird `rx_counter++` ausgeführt. Auch hier modulo 256.
-Belege: [main.c:118, 797–805, 907–908, 1015–1023](../stepper-ninja/firmware/src/main.c#L797).
+Belege: [main.c:118, 797–805, 907–908, 1015–1023](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L797).
 
 Beispiel: Anfragen 254, 255, 0 sind fortlaufend. Auf 10 folgt 12: Firmware
 erwartet 11, meldet Abweichung, antwortet mit 12 und erwartet danach 13.
@@ -608,8 +610,8 @@ oder vertauschte Antworten werden nicht anhand der ID verworfen. Eine passende
 Antwort-ID bedeutet außerdem nur, dass die Firmware die Anfrage bearbeitet hat:
 Sie bestätigt **nicht** die abgeschlossene Schrittgenerierung, und bei vollem
 Schrittring kann ein verworfener Burst trotzdem eine Antwort bekommen.
-Belege: [stepgen-ninja.c:480–594](../stepper-ninja/hal-driver/stepgen-ninja.c#L480),
-[main.c:258–271, 892–908](../stepper-ninja/firmware/src/main.c#L258).
+Belege: [stepgen-ninja.c:480–594](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L480),
+[main.c:258–271, 892–908](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L258).
 
 ## 7. Firmware → HAL: Messwerte und I/O
 
@@ -626,14 +628,14 @@ Kanäle werden nacheinander gelesen. Die Zähler sind auf dem Wire signed 32 Bit
 | Legacy-Quadratur | `quadrature_encoder_get_count(...)` | Zählerdifferenz seit vorheriger Paketverarbeitung, keine Hz-/RPS-Zahl |
 | `use_stepcounter=1` | `step_counter_get_count(...)` | immer 0 |
 
-Quelle: [main.c:833–865](../stepper-ninja/firmware/src/main.c#L833).
+Quelle: [main.c:833–865](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L833).
 Obwohl das Substep-Modul intern feinere `position`-/Geschwindigkeitswerte
 berechnet, werden diese nicht übertragen; nur `raw_step`. Beleg:
-[quadrature_encoder_substep.c:195–208](../stepper-ninja/firmware/quadrature_encoder_substep/quadrature_encoder_substep.c#L195).
+[quadrature_encoder_substep.c:195–208](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/quadrature_encoder_substep/quadrature_encoder_substep.c#L195).
 Ein Encoder zählt externe Pins, er ist keine automatische Rückmeldung eines
 gleich nummerierten Stepgens. Im Standard zeigen sogar alle drei Encoderbasen
 auf `PIN_14`; nur Encoder 0 hat einen Indexpin
-([config.h:38–41](../stepper-ninja/firmware/inc/config.h#L38)).
+([config.h:38–41](../third_party/stepper-ninja/firmware/inc/config.h#L38)).
 
 Der HAL-Empfänger bildet:
 
@@ -659,7 +661,7 @@ Geschwindigkeit bleibt erhalten. Initiales Sample und Indexereignis setzen
 die Differenzbasis zurück und überspringen die Geschwindigkeitsberechnung.
 `velocity-rps` ist nur dann tatsächlich Umdrehungen/s, wenn die Skalierung
 Counts/Umdrehung ist; sonst entsprechend Einheiten/s.
-Belege: [stepgen-ninja.c:240–269, 291–295, 521–584](../stepper-ninja/hal-driver/stepgen-ninja.c#L521).
+Belege: [stepgen-ninja.c:240–269, 291–295, 521–584](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L521).
 
 `enc_control` Bit i wird aus dem HAL-Pin `.encoder.i.index-enable` gesetzt.
 Core 1 aktiviert den konfigurierten GPIO-Flankeninterrupt. Beim Index setzt
@@ -672,12 +674,12 @@ allerdings die nachfolgende Ereignisbehandlung. Die Firmware deaktiviert den
 Interrupt im Callback; solange eine neue Anfrage weiterhin `enc_control=1`
 enthält, kann Core 1 ihn wieder aktivieren. Ein verlorenes Antwortpaket verliert
 auch das nicht wiederholte Ereignisflag.
-Belege: [stepgen-ninja.c:616–620, 535–557](../stepper-ninja/hal-driver/stepgen-ninja.c#L535),
-[main.c:363–389, 862–865, 920–938](../stepper-ninja/firmware/src/main.c#L920).
+Belege: [stepgen-ninja.c:616–620, 535–557](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L535),
+[main.c:363–389, 862–865, 920–938](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L920).
 
 `.debug-reset` speichert im HAL lediglich `enc_offset`; die nachfolgende
 Positionsberechnung zieht diesen Wert nicht ab. Es ist kein Wire-Resetkommando.
-Quelle: [stepgen-ninja.c:524–533](../stepper-ninja/hal-driver/stepgen-ninja.c#L524).
+Quelle: [stepgen-ninja.c:524–533](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L524).
 
 ### 7.2 Digitale Inputs und Outputs
 
@@ -686,13 +688,13 @@ Im Standard erfasst die Firmware `gpio_get_all64()` in `inputs[0]` und
 fortlaufende Eingangsindizes. Die beim Start genullten Felder `inputs[2..3]`
 werden im Standardpfad nicht mehr beschrieben und bleiben null. Die Zuweisungen
 nach `input_buffer[2..3]` nullen nur den separaten Diagnosepuffer.
-Beleg: [main.c:445–450, 868–888](../stepper-ninja/firmware/src/main.c#L868).
+Beleg: [main.c:445–450, 868–888](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L868).
 
 Der HAL-Treiber liest die konfigurierten GPIOs 22, 26, 27, 28 und exportiert
 `.input.gp22`, `.gp26`, `.gp27`, `.gp28` sowie jeweils `-not`.
-Quellen: [config.h:43–44](../stepper-ninja/firmware/inc/config.h#L43),
-[internals.h:128–131](../stepper-ninja/firmware/inc/internals.h#L128),
-[breakoutboard_hal_0.c:20–35, 55–64](../stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c#L55).
+Quellen: [config.h:43–44](../third_party/stepper-ninja/firmware/inc/config.h#L43),
+[internals.h:128–131](../third_party/stepper-ninja/firmware/inc/internals.h#L128),
+[breakoutboard_hal_0.c:20–35, 55–64](../third_party/stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c#L55).
 
 Outputs sind dagegen in der Reihenfolge von `out_pins` gepackt: Bit i ist
 Ausgang i. Standardmäßig steht nur `PIN_11=GPIO8` in dieser Liste; HAL-Pin
@@ -700,8 +702,8 @@ Ausgang i. Standardmäßig steht nur `PIN_11=GPIO8` in dieser Liste; HAL-Pin
 jedoch nach der **GPIO-Nummer** (`output_pins[i]<32`) statt nach dem Listenindex
 i. Für die Standardkonfiguration passt das; bei gemischten GPIOs über/unter 32
 kann Sender-/Empfängerzuordnung auseinanderfallen.
-Belege: [breakoutboard_hal_0.c:40–49, 67–81](../stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c#L67),
-[main.c:879–886](../stepper-ninja/firmware/src/main.c#L879).
+Belege: [breakoutboard_hal_0.c:40–49, 67–81](../third_party/stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c#L67),
+[main.c:879–886](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L879).
 
 ### 7.3 PWM und Analogvarianten
 
@@ -716,18 +718,18 @@ genullten Paket 0; Frequency wird trotzdem übertragen. Firmware setzt Duty auf
 16 Bit gekürzt sofort und aktualisiert Frequency auf Core 1.
 Bei 200 MHz ist die fest kodierte 1908-Hz-Grenze kein verlässlicher Schutz gegen
 16-Bit-Wrapüberlauf. Quellen:
-[stepgen-ninja.c:227–237, 731–752](../stepper-ninja/hal-driver/stepgen-ninja.c#L731),
-[main.c:418–425, 818–825](../stepper-ninja/firmware/src/main.c#L818),
-[pwm.c:20–45](../stepper-ninja/firmware/modules/pwm.c#L20).
+[stepgen-ninja.c:227–237, 731–752](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L731),
+[main.c:418–425, 818–825](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L818),
+[pwm.c:20–45](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/pwm.c#L20).
 
 Andere Boardprofile belegen dieselben Arraytypen anders:
 
 | Board | I/O-Interpretation und Analogwerte | Quellen |
 |---|---|---|
-| 1 | HAL liest 16 Inputs aus `inputs[2]` Bits 0–15, sendet 8 Outputs in `outputs[0]`. Firmware liest MCP-Port B in Low-Byte, Port A in High-Byte. HAL packt zwei DAC-Werte als 16-Bit-Hälften in `analog_out[0]`, lässt `[1]=0`; Firmware liest dagegen je `analog_out[0]&0xfff` und `[1]&0xfff`: echte Sender-/Empfängerinkonsistenz! `analog_enable` wird im Sender hier nicht ausgewertet. | [breakoutboard_hal_1.c:126–164](../stepper-ninja/hal-driver/modules/breakoutboard_hal_1.c#L126), [breakoutboard_1.c:97–124](../stepper-ninja/firmware/modules/breakoutboard_1.c#L97) |
-| 2 | 96 Inputs in `[0..2]`, 32 Outputs in `[0]`. Toolchanger-BCD wird HAL-seitig aus verbundenen Pins abgeleitet, kein eigenes Paketfeld. | [breakoutboard_hal_2.c:127–177](../stepper-ninja/hal-driver/modules/breakoutboard_hal_2.c#L127), [breakoutboard_2.c:116–121](../stepper-ninja/firmware/modules/breakoutboard_2.c#L116) |
-| 3 | Je Kanal ein 12-Bit-DAC-Wert in `analog_out[i]`, Enablebits in `outputs[0]`. Bipolare Skalierung: 2047 + 2047·input/max(abs(min),max) + int8-offset, auf 0–4095 begrenzt. Keine digitalen HAL-Inputs in diesem Boardmodul. | [breakoutboard_hal_3.c:19–36, 118–145](../stepper-ninja/hal-driver/modules/breakoutboard_hal_3.c#L19), [breakoutboard_3.c:52–64](../stepper-ninja/firmware/modules/breakoutboard_3.c#L52) |
-| 100 | 32 Inputs in `[0]`, übrige Inputwörter 0; 16 Outputs in `[0]`. Trotz `ANALOG_CH=2` setzt der zugehörige HAL-Sendecode keine Analogwerte; Firmwaremodul bedient nur digitale Expander. | [breakoutboard_hal_100.c:59–80](../stepper-ninja/hal-driver/modules/breakoutboard_hal_100.c#L59), [breakoutboard_100.c:76–95](../stepper-ninja/firmware/modules/breakoutboard_100.c#L76) |
+| 1 | HAL liest 16 Inputs aus `inputs[2]` Bits 0–15, sendet 8 Outputs in `outputs[0]`. Firmware liest MCP-Port B in Low-Byte, Port A in High-Byte. HAL packt zwei DAC-Werte als 16-Bit-Hälften in `analog_out[0]`, lässt `[1]=0`; Firmware liest dagegen je `analog_out[0]&0xfff` und `[1]&0xfff`: echte Sender-/Empfängerinkonsistenz! `analog_enable` wird im Sender hier nicht ausgewertet. | [breakoutboard_hal_1.c:126–164](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/modules/breakoutboard_hal_1.c#L126), [breakoutboard_1.c:97–124](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/breakoutboard_1.c#L97) |
+| 2 | 96 Inputs in `[0..2]`, 32 Outputs in `[0]`. Toolchanger-BCD wird HAL-seitig aus verbundenen Pins abgeleitet, kein eigenes Paketfeld. | [breakoutboard_hal_2.c:127–177](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/modules/breakoutboard_hal_2.c#L127), [breakoutboard_2.c:116–121](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/breakoutboard_2.c#L116) |
+| 3 | Je Kanal ein 12-Bit-DAC-Wert in `analog_out[i]`, Enablebits in `outputs[0]`. Bipolare Skalierung: 2047 + 2047·input/max(abs(min),max) + int8-offset, auf 0–4095 begrenzt. Keine digitalen HAL-Inputs in diesem Boardmodul. | [breakoutboard_hal_3.c:19–36, 118–145](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/modules/breakoutboard_hal_3.c#L19), [breakoutboard_3.c:52–64](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/breakoutboard_3.c#L52) |
+| 100 | 32 Inputs in `[0]`, übrige Inputwörter 0; 16 Outputs in `[0]`. Trotz `ANALOG_CH=2` setzt der zugehörige HAL-Sendecode keine Analogwerte; Firmwaremodul bedient nur digitale Expander. | [breakoutboard_hal_100.c:59–80](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/modules/breakoutboard_hal_100.c#L59), [breakoutboard_100.c:76–95](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/modules/breakoutboard_100.c#L76) |
 
 Diese Profile sind nicht durch die Paketlänge allein identifizierbar. Aus
 generischen Ausgangsbits folgt ohne HAL-Verdrahtung keine Aussage wie
@@ -744,8 +746,8 @@ bei 1000 µs also 0, bei 1100 µs auf üblichen Zweierkomplementsystemen −100.
 Der Ausdruck rechnet zunächst unsigned; die spätere signed-Zuweisung ist für
 große Werte eine Portabilitätsstelle. Die Konstante 1000 wird nicht an eine
 andere Servoperiode angepasst.
-Belege: [main.c:793–795, 999](../stepper-ninja/firmware/src/main.c#L793),
-[stepgen-ninja.c:516, 890](../stepper-ninja/hal-driver/stepgen-ninja.c#L516).
+Belege: [main.c:793–795, 999](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L793),
+[stepgen-ninja.c:516, 890](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L516).
 
 ## 8. Servozeit, Ringpuffer und Ausführungszeit
 
@@ -758,17 +760,17 @@ wird und der Watchdog läuft. Eine im selben Zyklus noch nicht eingetroffene
 Antwort kann erst im nächsten Callback gelesen werden. Die Firmware antwortet
 ereignisgesteuert je verarbeiteter fehlerfreier Anfrage; Verluste, Wartezeiten
 und Fehler reduzieren die tatsächliche Rate.
-Belege: [Test-HAL:2–9](../stepper-ninja/hal-driver/test_config/stepper-ninja.hal#L2),
-[Test-INI:84](../stepper-ninja/hal-driver/test_config/stepper-ninja.ini#L84),
-[stepgen-ninja.c:497, 755–758](../stepper-ninja/hal-driver/stepgen-ninja.c#L497),
-[main.c:1004–1023](../stepper-ninja/firmware/src/main.c#L1004).
+Belege: [Test-HAL:2–9](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.hal#L2),
+[Test-INI:84](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.ini#L84),
+[stepgen-ninja.c:497, 755–758](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L497),
+[main.c:1004–1023](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L1004).
 
 Die Beispiel-HAL-Datei ist kein nachgewiesen lauffähiger Test für diesen Checkout:
 Sie referenziert u.a. PWM-Pins ohne Kanalindex und einen `scaled-count`-Pin,
 während aktueller Code andere Namen exportiert und Standard-PWM deaktiviert
 ist. Ihre Verbindungen zeigen den beabsichtigten Datenfluss, ersetzen aber keine
-Laufzeitvalidierung. Belege: [Test-HAL:35–47](../stepper-ninja/hal-driver/test_config/stepper-ninja.hal#L35),
-[stepgen-ninja.c:930–971](../stepper-ninja/hal-driver/stepgen-ninja.c#L930).
+Laufzeitvalidierung. Belege: [Test-HAL:35–47](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/test_config/stepper-ninja.hal#L35),
+[stepgen-ninja.c:930–971](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L930).
 
 ### Standard: `use_timer_interrupt=0`
 
@@ -780,7 +782,7 @@ Beginn; eine volle PIO-FIFO kann `pio_sm_put_blocking` und damit die Antwort
 verzögern. Die Richtungs-GPIOs werden schon vor dem FIFO-Schreiben gesetzt,
 also nicht atomar mit dem tatsächlichen Start des neuen Bursts. Das kann bei
 aufgestauten Bursts/Richtungswechseln bedeutsam sein.
-Belege: [main.c:198–209, 809–815, 892–905](../stepper-ninja/firmware/src/main.c#L198).
+Belege: [main.c:198–209, 809–815, 892–905](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L198).
 
 ### Optional: `use_timer_interrupt=1`
 
@@ -801,7 +803,7 @@ nicht aus einem übertragenen `SERVO_PERIOD`. Auch bei vollem Ring wird diese
 Schätzung aktualisiert. Ist Platz vorhanden, wird eingereiht und das Overflowflag
 gelöscht; bei vollem Ring wird der **neue** Eintrag verworfen und Overflow gesetzt.
 Bei Timerstart wird Underflow gelöscht.
-Quellen: [main.c:99–110, 217–278](../stepper-ninja/firmware/src/main.c#L99).
+Quellen: [main.c:99–110, 217–278](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L99).
 
 Jeder Alarm entnimmt einen Eintrag und setzt den nächsten Sollalarm auf den
 vorherigen Sollalarm plus aktuelle geschätzte Periode. Ist der Ring zu Beginn
@@ -810,7 +812,7 @@ erneutes Auffüllen auf drei Einträge startet ihn wieder. Nullwörter zählen a
 Ring-Einträge und ergeben beim Anwenden keine neuen Schritte. Bei Timeout wird
 der Ringzustand zurückgesetzt; `step_timer_period_us` selbst wird in der
 Resetfunktion nicht wieder auf 1000 gesetzt.
-Quelle: [main.c:217–225, 942–982](../stepper-ninja/firmware/src/main.c#L942).
+Quelle: [main.c:217–225, 942–982](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L942).
 
 | Status | Maske | Interpretation |
 |---|---:|---|
@@ -825,9 +827,9 @@ Antwortbildung; Timerinterrupts können den Zustand zwischen einzelnen Lesezugri
 ändern. Die HAL-Pins `.stepgen.ring-fill`, `ring-active`, `ring-underflow`,
 `ring-overflow` bilden diese Werte direkt ab und lösen im Treiber keine
 Ratenregelung aus.
-Belege: [transmission.h:10–12](../stepper-ninja/firmware/modules/inc/transmission.h#L10),
-[main.c:892–905](../stepper-ninja/firmware/src/main.c#L892),
-[stepgen-ninja.c:517–520, 891–894](../stepper-ninja/hal-driver/stepgen-ninja.c#L517).
+Belege: [transmission.h:10–12](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L10),
+[main.c:892–905](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L892),
+[stepgen-ninja.c:517–520, 891–894](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L517).
 
 ### SPI-Abgrenzung
 
@@ -838,9 +840,9 @@ umfasst weiterhin nur die Struktur ohne ihr letztes Byte. Die gleichzeitig
 übertragene Antwort wurde vor Auswertung der aktuellen Anfrage aufgebaut und
 ist daher typischerweise um einen Transfer versetzt. SPI ist kein weiterer
 UDP-Port und im aktuellen Profil nicht aktiv.
-Belege: [transmission.h:51–53](../stepper-ninja/firmware/modules/inc/transmission.h#L51),
-[stepgen-ninja.c:455–463](../stepper-ninja/hal-driver/stepgen-ninja.c#L455),
-[main.c:1008–1016](../stepper-ninja/firmware/src/main.c#L1008).
+Belege: [transmission.h:51–53](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L51),
+[stepgen-ninja.c:455–463](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L455),
+[main.c:1008–1016](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L1008).
 
 ## 9. Bytebeispiele zur unabhängigen Überprüfung
 
@@ -917,9 +919,9 @@ Verdrahtung zusätzliche Messwerte liefern, sind aber weder automatisch
 Stepgenfeedback noch eine kodierte TCP-Bahn. Bei nichtkartesischer Kinematik
 sind Motor-/Jointkoordinaten außerdem nicht unmittelbar Werkzeugkoordinaten.
 Belege für verfügbare und fehlende Felder:
-[transmission.h:16–48](../stepper-ninja/firmware/modules/inc/transmission.h#L16),
-[stepgen-ninja.c:647–716](../stepper-ninja/hal-driver/stepgen-ninja.c#L647),
-[main.c:198–209, 797–815, 833–865](../stepper-ninja/firmware/src/main.c#L797).
+[transmission.h:16–48](../third_party/stepper-ninja/firmware/modules/inc/transmission.h#L16),
+[stepgen-ninja.c:647–716](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L647),
+[main.c:198–209, 797–815, 833–865](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L797).
 
 Damit liefert das Originalprotokoll eine brauchbare Grundlage, wenn
 Maschinenkonfiguration, Startreferenz und Simulationsdaten bekannt sind und

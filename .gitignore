@@ -47,10 +47,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Original checkout metadata stays local; original source files are committed.
-/stepper-ninja/.git/
-# Unneeded upstream prebuilt binaries and hardware dependency archive.
-/stepper-ninja/utility/benchmark_udp
-/stepper-ninja/utility/counter/step-dir-counter.uf2
-/stepper-ninja/firmware/ioLibrary_Driver.zip
-/stepper-ninja/firmware/ioLibrary_Driver/
+# Optional local upstream reference checkout; never part of the public tree.
+/stepper-ninja/

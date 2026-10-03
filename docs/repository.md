@@ -1,150 +1,73 @@
-# Repositorybestand bis Phase 5
-
-## Struktur und reproduzierbarer Build
+# Repository layout
 
 ```text
-.gitignore / .gitattributes     Artefaktausschlüsse und unveränderte Vendor-Bytes
-CMakeLists.txt                  Simulator und automatisierte Tests
-README.md                       Einstieg, Bedienung und aktueller Abnahmestatus
-CODEX_PHASE2_*.md                ursprünglicher Phase-2-Auftrag
-CODEX_PHASE3_*.md                ursprünglicher Phase-3-Auftrag
-codex_phase4a_linuxcnc_sim.md    verbindlicher Phase-4A-Auftrag
-codex_phase4a1_*.md              verbindlicher Phase-4A.1-Auftrag
-codex_phase5_material_removal.md verbindlicher Phase-5-Auftrag
-docs/                           Protokollanalyse, Herkunft und Phasenabnahmen
-examples/phase1/                 LinuxCNC-Beispiel für Motion
-examples/phase3/                 LinuxCNC-Beispiel mit VirtualIO, Homing und Probe
-scripts/                        veth-/Namespace-Einrichtung, Start und Teardown
-src/                            C++20-Simulator: Protokoll, UDP, Maschine,
-                                Simulation, Recorder, Konsole, virtuelle I/O,
-                                Sparse-Volumen, Material-Worker, CPU-Meshing, Werkzeug und Renderer
-tests/                          C/C++-, Python- und Shell-Tests
-third_party/stepper-ninja/       neun unveränderte Dateien für den Protokollkern,
-                                SHA256SUMS und UPSTREAM.md
-stepper-ninja/                   unveränderte Originalquellen und Referenzdokumente
+LICENSE                         linuxcnc-sim MIT license
+README.md                       Public entry point, build and Quick Start
+CMakeLists.txt                  Simulator and automated tests
+src/                            C++20 simulator and configuration system
+examples/mill/                  Simulator INI milling profile
+examples/phase3/                LinuxCNC XYZ machine, homing and virtual I/O
+examples/phase1/                Earlier motion-only LinuxCNC example
+scripts/                        veth/namespace setup, launch and teardown
+tests/                          C/C++, Python and shell regression tests
+third_party/stepper-ninja/       Minimal unchanged protocol and HAL-test inputs
+docs/                           Configuration, designs, validation and release notes
 ```
 
-Die ursprünglichen CODEX-Auftragsdokumente bleiben als historische Spezifikationen
-erhalten. Den aktuellen Status liefern README und die Phasenabnahmen.
+The public project is **linuxcnc-sim**; its executable remains **cnc-sim**.
+Source names, CLI behavior, configuration semantics and example LinuxCNC machine
+names retain the accepted implementation. This release cleanup does not rename
+runtime interfaces.
 
-Der Produktionsbuild verwendet `src/` und `third_party/stepper-ninja/`.
-Für die vollständige Suite einschließlich des Original-HAL-Tests ist außerdem
-`stepper-ninja/hal-driver/modules/breakoutboard_hal_0.c` erforderlich:
-`original-hal-inputs` kompiliert und prüft den Original-HAL-Code direkt.
-Die Anleitung zum separat gebauten LinuxCNC-HAL-Modul benötigt ebenfalls den
-Originalbestand mit seinen relativen Symlinks. Ein frischer Projektcheckout
-enthält diese Dateien direkt; ein Submodule-Download ist nicht nötig.
+## Bundled dependencies
 
-## Originalbestand
+Only `third_party/stepper-ninja/` supplies bundled Stepper-Ninja code. The existing
+nine protocol/license files and the Board-0 HAL fragment are pinned to upstream
+commit `eb7e5dfa2e76477e606a47038b07cca5e8a4b424`. The fragment is used directly by
+`original-hal-inputs`; it has not been reimplemented or patched. All ten files are
+covered by the SHA-256 integrity test. No upstream checkout or submodule download
+is needed to build the simulator or run its complete automated tests.
 
-Quelle des lokalen Originalcheckouts: `https://github.com/atrex66/stepper-ninja`,
-Commit `eb7e5dfa2e76477e606a47038b07cca5e8a4b424`. Der vorhandene Checkout wurde
-vor der Aufnahme geprüft und hatte keine Änderungen. Seine Quellen,
-Dokumentation, Lizenzen und relativen Symlinks werden als normale Dateien in das
-Projekt aufgenommen. Die bestehenden Original-Git-Metadaten bleiben lokal unter
-`stepper-ninja/.git/`; sie gehören weder zum Projektcommit noch zu einem Submodul.
+The [upstream provenance](../third_party/stepper-ninja/UPSTREAM.md) and original
+[MIT license](../third_party/stepper-ninja/LICENSE.txt) preserve Zsolt Viola's
+attribution separately from the [linuxcnc-sim MIT license](../LICENSE).
+The historical [file-selection analysis](stepper-ninja-files.md) also records
+licenses of upstream components that are deliberately **not bundled**.
 
-Drei upstream bereits enthaltene Dateien werden bewusst nicht aufgenommen:
+The separately installed LinuxCNC HAL module uses a pinned external checkout;
+see the [Quick Start](../README.md#quick-start). The full development reference
+checkout formerly tracked at `stepper-ninja/` is excluded from the public tree.
+That path is ignored so an existing local reference checkout can remain intact.
+It is not a build/test dependency. References to omitted upstream sources in
+historical documents use commit-pinned upstream links; bundled sources use
+repository-relative links.
 
-- `stepper-ninja/utility/benchmark_udp`: vorgebautes Hilfsprogramm.
-- `stepper-ninja/utility/counter/step-dir-counter.uf2`: fertiges Firmwareabbild.
-- `stepper-ninja/firmware/ioLibrary_Driver.zip`: WIZnet-Hardwarebibliotheksarchiv.
+`.gitattributes` preserves upstream bytes and existing line endings only under
+the vendor directory. Project sources retain normal whitespace checks.
 
-Auch der nicht ausgecheckte Upstream-Gitlink `firmware/ioLibrary_Driver`
-(WIZnet-Submodul) wird nicht übernommen; im Projekt gibt es keine Gitlinks.
+## Local and generated files
 
-Keine dieser Dateien wird vom Simulator, seinen Tests oder dem dokumentierten
-UDP-HAL-Build benötigt. Sie bleiben im lokalen Originalcheckout erhalten.
-Dieser Projektbestand ist damit kein vollständiges Archiv zum Bauen beliebiger
-Pico-Firmware. Alle übrigen vom Originalcheckout versionierten Dateien bleiben
-enthalten, auch bewusst aufbewahrte Referenzdateien, die dessen eigene
-`.gitignore` für unversionierte Dateien ausschließen würde.
+Build directories, compiler outputs, recorder CSVs, Python caches, editor files,
+temporary files and LinuxCNC runtime state are ignored. The local recorder outputs
+`phase2-line.csv` and `phase2-circle.csv` were already untracked before release
+cleanup and are not distributed. LinuxCNC `.ini`, `.hal`, `.tbl` and virtual-I/O
+example files remain tracked. Runtime parameter and position files are generated
+locally and should not be committed.
 
-Die neun Produktions-Vendordateien bleiben unverändert und werden durch den
-Test `vendor-integrity` anhand der festgelegten SHA-256-Werte sowie gegen den
-Originalbestand geprüft. Vorhandene Lizenzhinweise bleiben erhalten;
-Einzelheiten stehen in [stepper-ninja-files.md](stepper-ninja-files.md).
+Development prompt documents were removed from the public tree. Useful design,
+protocol, benchmark and acceptance documents remain under `docs/`; their phase
+names identify historical revisions rather than separate public products.
 
-Der Originalbestand enthält bereits Leerraumfehler. `.gitattributes` deaktiviert
-nur für `stepper-ninja/**` und `third_party/stepper-ninja/**` Git-Zeilenenden-
-Normalisierung und Leerraumwarnungen (`-text -whitespace`), damit die Originalbytes
-erhalten bleiben. Eigene Quellen behalten die normale Leerraumprüfung. In
-`examples/phase3/phase3.ini` wurde lediglich eine zusätzliche Leerzeile am Dateiende
-entfernt; Konfigurationswerte, Simulatorlogik und Tests bleiben unverändert.
+## Architecture and evidence
 
-## Lokale und generierte Dateien
+- [Configuration model, precedence and complete schema](simulator-configuration.md)
+- [Workpiece geometry and runtime snapshots](phase4a1-design.md)
+- [Material ownership, continuous sweeps, batching and mesh publication](phase5-design.md)
+- [Frozen material comparisons and LinuxCNC acceptance](phase5-test.md)
+- [Configuration validation and subsequent manual acceptance](phase55-test.md)
+- [Public release validation](release-validation-v0.1.0.md)
 
-`.gitignore` schließt Buildverzeichnisse, CMake-/Compilerprodukte, sämtliche
-Recorder-CSV-Dateien, Python-/Testcaches, temporäre Dateien, Editor-/IDE-Daten
-und lokale LinuxCNC-Parameter, Logs und Positionsspeicher aus. Die vorhandenen
-`phase2-line.csv` und `phase2-circle.csv` sind lokale Aufzeichnungen und werden
-nicht committed. Dasselbe gilt für `.var`, `.var.bak` und `.var.new` in den
-Beispielverzeichnissen; LinuxCNC erzeugt den Parameterspeicher zur Laufzeit.
-Benötigte `.ini`, `.hal`, `.tbl` und `virtual-io.conf` bleiben versioniert.
-
-Die Initialisierung betrifft ausschließlich das lokale Projekt-Repository mit
-Branch `main`; dafür wird kein Remote eingerichtet und nichts gepusht. Der
-bereits vorhandene Originalcheckout behält seine eigene lokale Git-Konfiguration.
-
-## Werkstückkonfiguration (Phase 4A.1)
-
-`src/simulation/Workpiece.*` definiert numerische Konfiguration, Bounds,
-Validierung und unveränderliche Snapshots. `Simulation.*` besitzt und
-veröffentlicht sie unabhängig von der UDP-Mailbox. Die Befehle liegen in
-`src/console/WorkpieceCommands.*`, die Runtime-Anbindung in `src/main.cpp`.
-`Renderer::set_workpiece` invalidiert GPU-Chunks und benutzt den bestehenden
-CPU-Mesher erneut. `tests/workpiece_tests.cpp` und `workpiece_cli.py` ergänzen
-Geometrie-, Transaktions-, Snapshot-, Parser- und Terminaltests; die bestehenden
-Grafiktests prüfen auch Rebuilds und UDP/Recorder während des Remeshings.
-Semantik und Kompatibilitätsentscheidungen: [phase4a1-design.md](phase4a1-design.md).
-
-Die reale/interaktive Phase-4A.1-Abnahme vom 2026-09-27 mit LinuxCNC 2.9.10
-ist in [phase4a1-test.md](phase4a1-test.md) dokumentiert.
-[phase4a-test.md](phase4a-test.md) enthält weiterhin die automatisierten
-Build-/Regressionsergebnisse und ergänzende manuelle Prüfanleitungen.
-
-## Materialsimulation (Phase 5)
-
-`src/material/MaterialRemoval.*` verbindet den analytischen Tool-Sweep mit der
-bestehenden SparseVoxelVolume und DirtyChunks. `MotionQueue.hpp` ist die geordnete
-SPSC-Übergabe; `MaterialWorker.*` besitzt das veränderliche Material, verarbeitet
-Steuerereignisse und publiziert unveränderliche Mesh-Verzeichnisse.
-`src/console/MaterialCommands.*` integriert Werkzeug-/Materialbefehle und Diagnostik.
-Simulation liefert die tatsächlich integrierten Bewegungen; Renderer lädt nur
-geänderte Meshes aus den Veröffentlichungen. Der bisherige synchrone Renderer-
-Pfad bleibt für eigenständige Szenentests erhalten.
-
-Erweitert wurden `SparseVoxelVolume`, `Tool`, `SurfaceMesher::DirtyChunks`,
-`Simulation`, `Renderer`, `main.cpp` und CMake. Neue Tests liegen in
-`tests/material_tests.cpp` und `tests/material_integration.py`; der bestehende
-Framebuffer-Test prüft zusätzlich Schnitt, Persistenz und Reset.
-Die Spezifikation bleibt als bereitgestellte Quelldatei erhalten.
-
-[phase5-design.md](phase5-design.md) dokumentiert Analyseplan, Mathematik,
-Threading, Queue, Invalidation, Reset und Grenzen.
-[phase5-test.md](phase5-test.md) enthält Build-/Testergebnisse und die manuelle
-LinuxCNC-Abnahme. **Phase 5 ist abgeschlossen; reale Abnahme: PASSED.** Der vom
-Bediener bestätigte Plunge-/Kreislauf mit 20-ms-Batches blieb flüssig, mit
-Queue-Maximum 4 und abschließendem Worker-Lag 0. Die dort dokumentierten
-synthetischen Referenzen und vollständigen Sanitizer-/TSan-Suiten bleiben gültig.
-Builds, Testlogs und Sanitizer-Artefakte bleiben in ignorierten `build*`-Verzeichnissen.
-Vendor-Dateien und Protokollquellen wurden nicht verändert.
-
-## Phase-5-Performanceoptimierung
-
-`src/material/MotionCoalescer.hpp` enthält den konservativen exakten
-Kollinearitätsnachweis. `src/meshing/MeshWorkers.*` verarbeitet unabhängige
-Chunks aus unveränderlichen Sparse-Volume-Snapshots. MaterialWorker bleibt
-alleiniger Materialbesitzer und prüft Generation und Chunk-/Nachbarversionen,
-bevor er vollständige aktuelle Mesh-Verzeichnisse veröffentlicht.
-
-`tests/material_benchmark.cpp` reproduziert den 296560-Voxel-Fingerabdruck
-mit 1/20/200/4000 Segmenten, optional Workerzahl und Mikrosekunden-Taktung;
-der finale Materialzustand wird voxelweise mit der groben Referenz verglichen.
-`tests/material_concurrency.cpp` prüft 1/2/4 Mesh-Threads, parallele Leser,
-Reset-/Werkstückgenerationen, unabhängige Snapshots und sämtliche finalen Meshes.
-Materialtests ergänzen exakte Diagonalen, Richtungswechsel, Ecken, Kurven und
-Chunkübergänge. Bestehende Tests und Vendor-Quellen bleiben aktiv/unverändert.
-Lokale Vergleichsprogramme und Logs liegen ignoriert unter `build-perf/`;
-`build-tsan/` enthält den ThreadSanitizer-Build. Reproduzierbare Resultate und
-Befehle stehen in [phase5-test.md](phase5-test.md).
+The example subnet `192.168.50.0/24` and the original vendor configuration's
+addresses are intentional functional configuration, not private developer
+infrastructure. No developer-specific home directory or private Git origin is
+part of the public instructions.

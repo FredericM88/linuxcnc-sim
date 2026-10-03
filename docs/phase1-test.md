@@ -4,7 +4,7 @@
 Der Benutzer bestätigte 1-ms-Servozeit, 400 Schritte/mm, Geraden und G2/G3-Kreise
 sowie über 600.000 Pakete ohne gemeldete Fehler oder ID-Lücken. Auch Phase 2
 und Phase 3 sind inzwischen abgeschlossen und real mit LinuxCNC getestet;
-siehe [Projektstand](../README.md#projektstand) und [Phase-3-Abnahme](phase3-test.md).
+siehe [Projektstand](../README.md#current-features) und [Phase-3-Abnahme](phase3-test.md).
 Die historischen Implementierungsbefunde und Testzahlen unten beschreiben den
 jeweiligen damaligen Stand, keine noch ausstehende Abnahme.
 
@@ -13,7 +13,7 @@ jeweiligen damaligen Stand, keine noch ausstehende Abnahme.
 Im Projektverzeichnis arbeiten:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -24,21 +24,8 @@ Python 3 für Tests und iproute2 für Namespaces. Fehlt CMake auf Debian, kann
 der Benutzer es mit `sudo apt-get install cmake` installieren. Diese
 Systeminstallation wurde bei der Umsetzung nicht ausgeführt.
 
-Bei der ursprünglichen Phase-1-Implementierung war CMake nicht vorhanden
-und `sudo` verlangte ein Passwort. Für den tatsächlich ausgeführten Build wurden daher die Debian-Pakete
-`cmake`, `cmake-data`, `librhash1` und `libuv1t64` ausschließlich unter
-`/tmp/cnc-sim-build-tools/root` entpackt. Solange dieser temporäre Ordner noch
-existiert, funktionieren alternativ diese Einstellungen für das aktuelle Terminal:
-
-```bash
-export PATH="/tmp/cnc-sim-build-tools/root/usr/bin:$PATH"
-export LD_LIBRARY_PATH="/tmp/cnc-sim-build-tools/root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Der gebaute Simulator selbst benötigt diese CMake-Umgebungsvariablen nicht.
+Die ursprüngliche Phase-1-Validierung nutzte temporär bereitgestellte CMake-Pakete.
+Für neue Builds gelten die [aktuellen Voraussetzungen](../README.md#requirements).
 Tests für Decoder/Prüfsumme verwenden keine abgeschalteten `assert`-Makros und
 bleiben auch bei Release-Builds wirksam.
 
@@ -49,40 +36,17 @@ Benötigt wird der unveränderte `stepgen-ninja`-HAL-Treiber aus Commit
 Standardprofil. Ein installiertes gleichnamiges Modul mit anderem Profil ist
 nicht durch den Namen oder die Paketlänge allein als kompatibel erkennbar.
 
-Bei vorhandenen LinuxCNC-Entwicklungsdateien außerhalb des Originalcheckouts bauen:
-
-```bash
-cmake -S stepper-ninja/hal-driver -B build/original-hal
-cmake --build build/original-hal --target stepgen-ninja
-```
-
-Diese beiden Befehle wurden auf dem untersuchten Rechner erfolgreich ausgeführt.
-Sie erzeugen `build/original-hal/stepgen-ninja/stepgen-ninja.so` und verändern
-`stepper-ninja/` nicht. Für den manuellen LinuxCNC-Test das Modul installieren,
-falls noch kein passendes Modul installiert ist:
-
-```bash
-sudo cmake --install build/original-hal --component stepgen-ninja
-```
-
-Bei Verwendung des ausschließlich temporär entpackten CMake statt eines
-systemweit installierten CMake kann das bereits gebaute Originalmodul direkt
-installiert werden:
-
-```bash
-sudo install -m 0755 build/original-hal/stepgen-ninja/stepgen-ninja.so /usr/lib/linuxcnc/modules/stepgen-ninja.so
-```
-
-Nur eine der beiden Installationsvarianten verwenden. Sie installiert das
-Originalmodul an den üblichen LinuxCNC-Modulpfad; sie würde ein dort bereits
-vorhandenes gleichnamiges Modul ersetzen. Hier war noch keines installiert,
-und es wurde keine Installation mit sudo durchgeführt. Keine Originalquelle
-wurde gepatcht oder umformatiert.
+Der vollständige Originalcheckout wird seit der Release-Bereinigung nicht mehr
+mitgeliefert. Der [aktuelle Quick Start](../README.md#1-provide-the-original-linuxcnc-hal-driver)
+beschreibt den separaten, auf diesen Commit festgelegten Checkout sowie Bau und
+Installation des unveränderten Moduls. Die historische Abnahme nutzte denselben
+Originaltreiber. Die Installation ersetzt ein gegebenenfalls bereits vorhandenes
+gleichnamiges LinuxCNC-Modul.
 
 ## 3. Virtuelles Ethernet einrichten und prüfen
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/setup-veth.sh
 ip -4 address show dev veth-lcnc
 sudo ip -n cnc-sim-ns -4 address show dev veth-sim
@@ -109,7 +73,7 @@ werden. Ein Fehler während einer neuen Einrichtung löst deren Rollback aus.
 Terminal A:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/run-simulator.sh --steps-per-unit 400,400,400,400 --units mm,mm,mm,unit --stats
 ```
 
@@ -127,7 +91,7 @@ ursprüngliche Geräte-IP `192.168.0.177` bleibt im unveränderten Import erhalt
 Terminal B, als normaler Benutzer:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 linuxcnc examples/phase1/phase1.ini
 ```
 
@@ -139,8 +103,8 @@ loadrt stepgen-ninja ip_address="192.168.50.2:8888"
 ```
 
 Es werden keine vorhandenen LinuxCNC-Konfigurationen überschrieben. `axis`
-ist die vorhandene LinuxCNC-Bedienoberfläche; der Simulator selbst besitzt
-keine GUI. Die Beispielmaschine lädt keine physischen Maschinen-/GPIO-Treiber.
+ist die vorhandene LinuxCNC-Bedienoberfläche; der damalige Phase-1-Simulator besaß
+keine GUI; die aktuelle Version bietet eine optionale OpenGL-Ansicht. Die Beispielmaschine lädt keine physischen Maschinen-/GPIO-Treiber.
 Encoder- und PWM-Pins werden für diesen Test nicht verbunden.
 
 Die Aufrufreihenfolge im Servo-Thread ist Motion-Handler, Motion-Controller,
@@ -148,7 +112,7 @@ Watchdog, Send, Receive. Der Simulator muss bereits laufen, wenn der HAL-Treiber
 startet: Dessen Watchdog stoppt nach mehr als zehn Zählerschritten ohne gültige
 Antwort sowohl Senden als auch Empfangen. Nach diesem Fehler LinuxCNC neu
 starten; spätes Starten des Simulators allein heilt ihn nicht.
-Beleg: [Original-HAL:367–388, 484–490, 605–607](../stepper-ninja/hal-driver/stepgen-ninja.c#L367).
+Beleg: [Original-HAL:367–388, 484–490, 605–607](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/hal-driver/stepgen-ninja.c#L367).
 
 ## 6. Verbindung und Referenz prüfen
 
@@ -232,7 +196,7 @@ Zuerst LinuxCNC schließen, dann in Terminal A Ctrl+C. Der Simulator gibt eine
 Abschlussstatistik aus. Danach:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/teardown-veth.sh
 ip link show dev veth-lcnc
 sudo ip netns list
@@ -278,7 +242,7 @@ Technische Entscheidungen innerhalb des vorgegebenen Umfangs:
 * Schrittbursts werden sofort ganzzahlig integriert; das Timing wird dekodiert,
   aber noch nicht als elektrische Pulssimulation ausgeführt. PIO-Indizes >=299
   werden abgewiesen. Im Original erfolgt ein fehlerhafter Tabellenzugriff vor
-  der Prüfung ([main.c:394–402](../stepper-ninja/firmware/src/main.c#L394)); dieser
+  der Prüfung ([main.c:394–402](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L394)); dieser
   Bug wird gemäß Phase-1-Auftrag nicht reproduziert.
 * Strikte Längenprüfung nutzt einen Empfangspuffer mit einem zusätzlichen Byte.
   Auch überlange Datagramme mit gültigem 37-Byte-Präfix werden verworfen.
@@ -288,7 +252,7 @@ Technische Entscheidungen innerhalb des vorgegebenen Umfangs:
   in der Antwort unverändert gespiegelt; dann wird ID+1 modulo 256 erwartet.
   Duplikate/Umordnungen werden wie im normalen Originalpfad erneut angewendet.
   Lückenstatistik ist keine beweisbare Verlustanzahl. Quellen:
-  [main.c:797–805, 907–908, 1022](../stepper-ninja/firmware/src/main.c#L797).
+  [main.c:797–805, 907–908, 1022](https://github.com/atrex66/stepper-ninja/blob/eb7e5dfa2e76477e606a47038b07cca5e8a4b424/firmware/src/main.c#L797).
 * Antworten gehen immer an den tatsächlichen Absender, wie die Phase-1-Aufgabe
   ausdrücklich verlangt. Die ursprüngliche Firmware fixiert ihren Antwortpeer
   beim ersten Senden; diese Einschränkung wird nicht übernommen.

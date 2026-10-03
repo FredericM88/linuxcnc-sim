@@ -1,474 +1,321 @@
-# Virtueller Stepper-Ninja – Phase 5
+# linuxcnc-sim
 
-Ein Linux-C++20-Programm empfängt die originalen Stepper-Ninja-UDP-Pakete,
-dekodiert Step-Bursts, integriert vier virtuelle Motorpositionen in `int64_t`
-und sendet gültige Antworten an den originalen LinuxCNC-HAL-Treiber.
-LinuxCNC übernimmt weiterhin G-Code, Kinematik und Bahnplanung.
-Phase 2 ergänzt eine feste Terminaloberfläche und einen Recorder für tatsächliche
-Schrittänderungen. Phase 1 wurde vom Benutzer mit echtem LinuxCNC erfolgreich
-getestet: 1-ms-Servozeit, 400 Schritte/mm, Geraden und G2/G3-Kreise, über 600.000
-Pakete ohne gemeldete Fehler oder ID-Lücken.
+An early experimental standalone CNC machine simulator for LinuxCNC. It emulates
+motion hardware behind LinuxCNC, visualizes the machine and stock, and removes
+material from a persistent voxel workpiece as the tool moves.
 
-Der erste reale Phase-5-Lauf entfernte geometrisch korrekt **296560 Voxel**,
-zeigte aber einen großen Performance-Rückstand. Die Optimierung fasst exakt
-kollineare Motion zusammen, invalidiert chunkweise und mesht unveränderliche
-Snapshots parallel. Für Kurven sammelt die Batch Sweep Union standardmäßig
-20 ms an Event-Zeitstempeln; alle nicht exakt zusammenfassbaren Segmente bleiben
-erhalten. Der UDP-Pfad bleibt unabhängig. Die reale LinuxCNC-Abnahme nach dieser
-Optimierung ist **PASSED**: Plunge und vollständige Kreisnut wurden flüssig ohne
-sichtbares Nachholen abgetragen; Queue-Maximum 4, abschließender Worker-Lag 0.
-Das [reale Abnahmeprotokoll](docs/phase5-test.md#real-linuxcnc-acceptance--passed)
-dokumentiert die vom Bediener bestätigten Ergebnisse und die Abgrenzung zur
-synthetischen Referenz.
+**v0.1.0 is experimental development software. It is not a replacement for
+real-machine safety systems.** The current simulator and INI configuration have
+been manually accepted against real LinuxCNC, alongside automated regression and
+sanitizer tests. This is not a hard-real-time or physical-machine accuracy guarantee.
 
-`--material-batch-ms N` setzt das Materialfenster: Standard 20 ms, ganze Zahlen
-1..1000; 0 aktiviert den bisherigen segmentweisen Referenzpfad. Steuerbefehle
-und Capture schließen offene Batches vor ihrer Ausführung ab.
-`--material-workers 1` behält einen autoritativen Material-Thread.
-`--mesh-workers 0` (Standard) wählt bis zu vier Mesh-Threads und lässt rechnerisch
-zwei logische CPUs frei; explizit sind 1..32 möglich. Andere Material-Threadzahlen
-werden derzeit abgewiesen. Messwerte, Snapshot-Semantik und Grenzen stehen in
-[Phase-5-Design](docs/phase5-design.md) und [Testprotokoll](docs/phase5-test.md).
-
-## Projektstand
-
-| Phase | Status |
-|---|---|
-| Phase 1: virtuelle Stepper-Ninja-UDP-Hardware und Motion-Anbindung | abgeschlossen und real mit LinuxCNC getestet |
-| Phase 2: Terminaloberfläche und Motion Recorder | abgeschlossen und real mit LinuxCNC getestet |
-| Phase 3: VirtualIO, Endschalter, Homing und Probe/G38.2 | abgeschlossen und real mit LinuxCNC getestet |
-| Phase 4A: Sparse-Voxel-Modell und OpenGL-Liveansicht | automatisiert getestet; OpenGL-/G53-Pfad im Rahmen der realen 4A.1-Abnahme bestätigt |
-| Phase 4A.1: konfigurierbare Werkstückgeometrie und Platzierung | automatisiert getestet und am 2026-09-27 real/interaktiv mit LinuxCNC 2.9.10 erfolgreich abgenommen |
-| Phase 5: kontinuierlicher Voxel-Materialabtrag | **abgeschlossen**; automatisiert und real mit LinuxCNC abgenommen: **PASSED** |
-
-Die reale Phase-4A.1-Abnahme wurde vom Benutzer bestätigt: Runtime-Geometrie,
-Origins, Platzierung und G53-Werkzeugposition stimmten mit LinuxCNC 2.9.10
-überein. Bei aktiver Phase-3-VirtualIO wurden **RX = accepted = TX = 841238**
-und ausschließlich null Fehlerzähler beobachtet. Das ist ein funktionaler
-Sitzungsnachweis, keine harte Echtzeit- oder formale Zuverlässigkeitsgarantie.
-Das [reale Abnahmeprotokoll](docs/phase4a1-test.md) enthält Startbefehle,
-Bounds und den G53-End-to-End-Test.
-
-Auch die frühere reale Phase-3-Abnahme wurde vom Benutzer bestätigt. Dabei liefen Simulator und
-LinuxCNC stabil mit **RX = accepted = TX**; Invalid-Pakete, Send Errors, Length
-Errors, Checksum Errors, Timing Errors, Position Overflows und Packet-ID Gaps
-blieben bei **0**. `input 22 on` kam am Original-HAL als GP22=TRUE und
-GP22-not=FALSE an. Virtuelle Endschalter und LinuxCNC-Homing funktionierten.
-
-Der reale Probe-Test mit `G91` und `G38.2 Z-12 F50` bestätigte Probe ON,
-Wire28=1 und `motion.probe-input=TRUE`. Bei 400 Schritten/mm wurden gemessen:
-
-| Größe | Z |
-|---|---:|
-| Geometrische Probe-Ebene | -2000 Schritte = -5.000000 mm |
-| Von LinuxCNC gespeicherte Probe-Position (`#5063`) | -5.003050 mm |
-| Endgültige Simulatorposition | -2005 Schritte = -5.012500 mm |
-
-`#5061` und `#5062` ergaben jeweils 0.000000. Der Pin `motion.probed-position`
-existiert in dieser Konfiguration nicht; geprüft wurde mit
-`(DEBUG, Probe X=#5061 Y=#5062 Z=#5063)`. Diese Werte sind Messergebnisse des
-realen Softwaretests und keine Aussage zur mechanischen Genauigkeit einer
-realen Maschine: Der Simulator besitzt keine reale Mechanik, kein Spiel und
-keine Motor-/Antriebsdynamik. Das vollständige Protokoll steht in
-[docs/phase3-test.md](docs/phase3-test.md#reale-phase-3-abnahme-mit-linuxcnc).
+## Architecture
 
 ```text
-LinuxCNC / originaler stepgen-ninja HAL (Host, UDP :8888)
-    │
-veth-lcnc 192.168.50.1/24
-    │ virtuelles Ethernet
-veth-sim 192.168.50.2/24
-    │ Network Namespace cnc-sim-ns
-cnc-sim 192.168.50.2:8888
+LinuxCNC
+    |
+    | original Stepper-Ninja HAL driver
+    v
+Stepper-Ninja UDP protocol  <---- virtual digital inputs
+    |                                      ^
+    v                                      |
+linuxcnc-sim -------------------------------+
+    +-- virtual machine motion
+    +-- digital I/O, limit switches and homing interaction
+    +-- virtual probe input / probe plane
+    +-- OpenGL visualization
+    +-- persistent material removal
 ```
 
-Die getrennten Netzwerk-Namespaces erlauben Port 8888 auf beiden Seiten,
-obwohl der unveränderte HAL-Treiber an `0.0.0.0:8888` bindet. Kein NAT,
-Routingdienst oder permanenter Netzwerkeintrag ist erforderlich.
+linuxcnc-sim does **not independently interpret G-code**. LinuxCNC owns G-code
+interpretation, trajectory planning, coordinate systems, offsets and compensation.
+The simulator receives the resulting low-level machine motion and returns
+simulated digital inputs. Workpiece positions are in machine space; LinuxCNC
+G54/G55, G92 and tool-length offsets are not applied a second time.
 
-## Bauen und testen
+## Why Stepper-Ninja?
 
-Voraussetzungen: Linux, CMake >=3.20, C-/C++20-Compiler, Make oder Ninja,
-GLM (`libglm-dev`). Der optionale Renderer wird standardmäßig mitgebaut und
-benötigt `libgl1-mesa-dev` und `libglfw3-dev`; `mesa-utils` dient der Diagnose.
-Tests benötigen zusätzlich Python 3 und Bash. Für veth: iproute2. Die
-normalen Protokoll-/UDP-Tests benötigen weder Root noch LinuxCNC.
-
-```bash
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Der Namespace-Test nutzt, falls verfügbar, unprivilegierte User-, Mount- und
-Netzwerk-Namespaces mit einem privaten temporären `/run`. Er verändert das
-Hostnetz nicht. Ist diese Kernel-Funktion gesperrt, meldet CTest diesen Test
-als übersprungen; die übrigen Tests laufen trotzdem. Der Release-Build kann
-mit `-DCMAKE_BUILD_TYPE=Release` konfiguriert werden. Ohne Tests ist Python
-nicht erforderlich: `-DBUILD_TESTING=OFF`.
-
-## Simulator-Konfiguration (Phase 5.5)
-
-```bash
-./build/cnc-sim --config examples/mill/simulator.ini
-./build/cnc-sim --config examples/mill/simulator.ini --material-batch-ms 50 --print-config
-```
-
-`simulator.ini` bündelt Netzwerk, Achsen, Material-/Mesh-Worker, Rendering,
-Werkstück und Werkzeug. Reihenfolge: **Defaults < INI < CLI < Laufzeitbefehle**.
-Alle bisherigen CLI-Optionen bleiben erhalten; ohne INI bleiben die bisherigen
-Defaults aktiv. `--print-config` validiert und zeigt die wirksame Startkonfiguration,
-ohne UDP oder Worker zu starten. Relative INI-Dateipfade beziehen sich auf das
-INI-Verzeichnis. `virtual-io.conf` bleibt eine eigene Datei mit Sensorbefehlen in
-Schrittkoordinaten. Interaktive Änderungen werden nicht zurückgeschrieben.
-
-Das Beispiel verwendet die abgenommene Milling-Szene mit Grafik und Material OFF
-für Homing. [Vollständiges Schema, Koordinaten, CLI-Kompatibilität und Grenzen](docs/simulator-configuration.md)
-und [Phase-5.5-Validierung](docs/phase55-test.md).
-
-## Phase 4A: optionale 3D-Ansicht
-
-```bash
-./build/cnc-sim --render --bind 127.0.0.1 --steps-per-unit 400,400,400,400
-```
-
-Das Beispiel öffnet die lokale Ansicht ohne LinuxCNC-Verbindung. Für LinuxCNC
-im vorhandenen Netzwerk-Namespace siehe den [real abgenommenen Grafik-Start
-mit Phase-3-VirtualIO und G53-Test](docs/phase4a1-test.md).
-Die bisherige Nutzung ohne `--render` bleibt erhalten.
-
-Dargestellt werden ein 50×50×10-mm-Rohteil (Oberseite Z=0), ein 6-mm-Flachfräser,
-Tisch und XYZ-Achsen in Rot/Grün/Blau. Die Werkzeugspitze folgt ausschließlich den
-bestehenden int64-Step-Positionen. Linke Maustaste: Orbit; mittlere: Pan;
-Mausrad: Zoom; Home: Fit Scene. Der Fenstertitel zeigt XYZ in mm.
-
-Kompatible Startoptionen: `--voxel-size 0.1`, `--stock-size 50,50,10`,
-`--stock-origin 0,0,-10`, `--stock-rotation 0,0,0` (Grad, Rz·Ry·Rx).
-Sparse-Volumen und CPU-Mesher sind OpenGL-unabhängig; keine Voxelarrays für das
-unbearbeitete Rohteil. Phase 5 ergänzt den unten beschriebenen kontinuierlichen Materialabtrag.
-
-## Phase 5: kontinuierlicher Materialabtrag
+To simulate the machine behind LinuxCNC, the interface belongs where LinuxCNC
+normally communicates with motion hardware. Stepper-Ninja already provides a
+LinuxCNC HAL driver, a compact UDP protocol, step-generator commands and
+bidirectional digital I/O. linuxcnc-sim emulates the hardware side of that existing
+interface instead of introducing another HAL driver and protocol.
 
 ```text
-tool flat-end 6 20
-material on
-material show
-material off
-material reset
+LinuxCNC -> Stepper-Ninja HAL driver -> UDP -> linuxcnc-sim
 ```
 
-Material startet **OFF**. Erst nach Homing und Positionierung bewusst einschalten.
-Der Flachfräser verwendet die tatsächliche G53-Werkzeugspitze als Bottom-Centre
-und schneidet von dort 20 mm entlang +Z. `tool show` zeigt seine Konfiguration.
-ON erfasst auch die aktuelle stehende Position; OFF erhält vorhandene Schnitte.
-Reset erzeugt das Rohteil aus der aktuellen Werkstückkonfiguration neu und behält
-Werkzeug und Ein/Aus-Zustand. `workpiece reset` stellt dagegen die ursprüngliche
-Werkstückkonfiguration wieder her.
+The return path matters: virtual limit switches and probe signals can feed back
+into LinuxCNC's existing homing and probing logic. The current probe is a point
+against a configured plane, **not geometric workpiece probing**.
 
-Eine verlustfreie geordnete FIFO übergibt integrierte XYZ-Bewegungen und
-Steuerereignisse an einen separaten Material-Worker. Dieser prüft analytische
-kontinuierliche Zylinder-Sweeps gegen Voxelzentren, entfernt Material dauerhaft
-und übergibt geänderte Chunks samt Nachbarn als Snapshot an den Mesh-Pool.
-OpenGL erhält unveränderliche,
-konsistente Mesh-Stände; Kamera und Werkzeugposition bleiben unabhängig bedienbar.
-UDP wartet weder auf Materialberechnung noch Meshing oder OpenGL.
+Stepper-Ninja is the current transport/interface. A physical CNC machine used
+later does not have to use Stepper-Ninja hardware. Additional transport adapters
+may be explored in the future; v0.1.0 supports this interface only.
 
-Befehlsantworten bestätigen die Einreihung; `material show` zeigt den verarbeiteten
-Zustand, Queue-Rückstau, Schnitt-/Meshzähler, Volumen und Laufzeiten. Bei Überlast
-wächst die Queue im RAM, ohne Bewegungen zu verwerfen. Speicher-/Workerfehler
-beenden die Simulation ausdrücklich als unvollständig. Dies ist keine harte
-Echtzeitgarantie des Betriebssystems oder Speicherallokators.
+## Current features
 
-Die Voxelzentrenregel ist binär (255 -> 0), auflösungsabhängig und nicht CAD-exakt.
-Keine Kollisionen, Schnittkräfte, A-Achsen-Rotation oder automatische G54/G55-
-Verarbeitung. Mathematik und Grenzen: [Phase-5-Design](docs/phase5-design.md).
-Build-/Testergebnisse und **bestandene reale LinuxCNC-Abnahme samt Befehlen**:
-[Phase-5-Tests](docs/phase5-test.md).
+- Four simulated step axes (X/Y/Z/A), configurable scales and exact integer step
+  positions; the supplied LinuxCNC milling example uses XYZ.
+- Virtual digital inputs, six configurable limit switches, LinuxCNC homing
+  interaction and a separate probe-plane input.
+- Motion recorder with CSV export and an interactive terminal console.
+- Optional OpenGL 3.3 visualization with orbit, pan, zoom and fit-to-scene controls.
+- Configurable machine-space workpiece placement and sparse voxel stock.
+- Flat-end cutter, persistent material removal, continuous swept-cylinder removal
+  and exact sweep batching without replacing curved motion with endpoint chords.
+- Simulator INI configuration, CLI overrides and effective startup configuration
+  inspection through `--print-config`.
 
-## Werkstück zur Laufzeit konfigurieren (Phase 4A.1)
+## Requirements
 
-```text
-workpiece size 100 60 20
-workpiece position 50 30 0
-workpiece origin 10 center max
-workpiece voxel 0.10
-workpiece show
-workpiece reset
-```
+- Linux on a little-endian system; C11/C++20 compiler, CMake 3.20 or newer, Make
+  or Ninja, and GLM.
+- For visualization: OpenGL 3.3, GLFW 3 and a working graphical session.
+- For tests: Python 3 and Bash. The network-namespace test additionally needs
+  iproute2 and unprivileged user/network/mount namespaces.
+- For the LinuxCNC example: LinuxCNC 2.9 userspace, its development files, and the
+  original Stepper-Ninja HAL module built with the pinned Board-0 UDP profile.
+  Manual acceptance used LinuxCNC 2.9.10.
+- `sudo`/root for veth/network-namespace setup and HAL module installation.
+  Ordinary simulator builds and most tests do not need root or LinuxCNC.
 
-`size` sind die physischen Rohteilabmessungen in mm. `position` ist die
-**G53-Maschinenposition des ausgewählten Bezugspunkts**. `origin` ist dessen
-**Offset vom Rohteilminimum**, pro Achse als mm-Zahl oder `min`, `center`, `max`.
-Gemischte Eingaben sind zulässig. Es gilt `machine_min = position - origin`
-und `machine_max = machine_min + size`. Das Beispiel ergibt Min (40,0,-20)
-und Max (140,60,0) mm. LinuxCNC verwaltet G54/G55; der Simulator wendet keinen
-zusätzlichen Work Offset an.
-
-Die Symbole werden einmalig in Zahlen aufgelöst. Größenänderungen behalten den
-numerischen Origin; liegt er danach außerhalb `[0,size]`, wird die Änderung
-vollständig abgewiesen. Auch NaN/Inf, nichtpositive Größen/Auflösungen,
-Indexüberläufe und Jobs über 65536 Chunks werden abgewiesen.
-
-Jede gültige Änderung erstellt frisches Rohmaterial, erscheint ohne Neustart im
-OpenGL-Fenster und aktualisiert Home/Fit. Das Werkzeug bleibt an seiner tatsächlichen
-Maschinenposition. UDP läuft unabhängig vom Rebuild weiter. Alle Befehle
-funktionieren auch headless. `show` zeigt die vollständige Transformation.
-`reset` stellt die zentralen Defaults wieder her: Größe 50×50×10 mm,
-Position (0,0,0), Origin (0,0,10), Voxel 0,10 mm; Oberseite Z=0.
-
-Die alte CLI-Option `--stock-origin` bleibt eine Minimum-Translation. Eine mit
-`--stock-rotation` gestartete Szene bleibt bis zum ersten gültigen schreibenden
-`workpiece`-Befehl rotiert; die Konsole meldet den Wechsel zum achsparallelen
-Modell. Nicht teilbare Abmessungen bleiben wie in Phase 4A nach außen gerastert;
-`show` zeigt die ungerundeten physischen Grenzen. Details und Grenzen:
-[Phase-4A.1-Architektur](docs/phase4a1-design.md).
+On Debian with the LinuxCNC packages available:
 
 ```bash
-# Grafiktests bewusst separat aktivieren (Desktop erforderlich):
-cmake -S . -B build -DCNC_SIM_RENDER_TESTS=ON
+sudo apt-get install git build-essential cmake libglm-dev libgl1-mesa-dev \
+  libglfw3-dev python3 iproute2 linuxcnc-uspace linuxcnc-uspace-dev
+```
+
+## Build
+
+Clone this repository using its published clone URL, then run the remaining
+commands from the checkout root:
+
+```bash
+# Enter the clone URL of this linuxcnc-sim repository when prompted.
+read -r -p 'linuxcnc-sim clone URL: ' LINUXCNC_SIM_URL
+git clone "$LINUXCNC_SIM_URL" linuxcnc-sim
+cd linuxcnc-sim
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ctest --test-dir build --output-on-failure
+```
 
-# Komplett ohne OpenGL-/GLFW-Abhängigkeit bauen und headless testen:
-cmake -S . -B build-headless -DCNC_SIM_RENDER=OFF -DCMAKE_BUILD_TYPE=Release
+For the complete graphics suite on a working desktop, configure with
+`-DCNC_SIM_RENDER_TESTS=ON`. A build without OpenGL/GLFW is also supported:
+
+```bash
+cmake -S . -B build-headless -DCMAKE_BUILD_TYPE=Release -DCNC_SIM_RENDER=OFF
 cmake --build build-headless -j4
 env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build-headless --output-on-failure
 ```
 
-Historischer Phase-4A.1-Stand: **26/26 Tests mit Grafiktests**, **24/24 im Headless-Release-Build**,
-keine Fehler/Skips; auch OpenGL 3.3 Core auf Mesa/radeonsi erfolgreich geprüft.
-Details: [Architektur und Entscheidungen](docs/phase4a-design.md),
-[automatisierte Testergebnisse](docs/phase4a-test.md),
-[reale Phase-4A.1-Abnahme](docs/phase4a1-test.md).
+CTest reports the namespace test as skipped if the kernel disables the required
+unprivileged namespaces. Release validation requires it to run; see the
+[validation report](docs/release-validation-v0.1.0.md) for the full matrix.
 
-## Start für LinuxCNC
+## Quick Start
+
+Use the separate supplied virtual-machine configuration, with no physical machine
+connected. Install dependencies and build as above first.
+
+### 1. Provide the original LinuxCNC HAL driver
+
+If the matching module is not already installed, obtain the pinned upstream
+revision in a **separate sibling checkout**, build it and install `stepgen-ninja`:
+
+```bash
+git clone https://github.com/atrex66/stepper-ninja.git ../stepper-ninja-hal
+git -C ../stepper-ninja-hal checkout --detach eb7e5dfa2e76477e606a47038b07cca5e8a4b424
+cmake -S ../stepper-ninja-hal/hal-driver -B build/original-hal
+cmake --build build/original-hal --target stepgen-ninja
+sudo cmake --install build/original-hal --component stepgen-ninja
+```
+
+Installation writes the LinuxCNC module directory and replaces an existing module
+of the same name. Keep upstream's default Board-0 UDP profile unchanged: it must
+match the simulator's pinned protocol profile. The minimal bundled protocol/test
+files in `third_party/stepper-ninja/` are not a complete HAL driver distribution.
+
+### 2. Set up virtual networking
 
 ```bash
 sudo ./scripts/setup-veth.sh
-sudo ./scripts/run-simulator.sh --steps-per-unit 400,400,400,400
 ```
 
-LinuxCNC verwendet `ip_address="192.168.50.2:8888"`. Ein eigenständiges
-XYZ-Beispiel liegt unter `examples/phase1/`. Die vollständige Anleitung
-einschließlich Bau/Installation des unveränderten HAL-Moduls, Referenzierung,
-10-mm-Test und Teardown steht in [docs/phase1-test.md](docs/phase1-test.md).
+This creates `veth-lcnc` at `192.168.50.1/24` on the host and `veth-sim` at
+`192.168.50.2/24` inside `cnc-sim-ns`. These are deliberate example addresses.
+The separate namespace lets both endpoints use UDP port 8888; the original HAL
+driver binds that port on the host. The script checks resource ownership and
+refuses a conflicting route or foreign interface. It does not configure NAT,
+IP forwarding or persistent network-manager settings.
 
-Nach Beenden von LinuxCNC und Simulator:
+### 3. Start the simulator first
+
+From the checkout root in a graphical terminal, enter the namespace as root and
+run the simulator as your desktop user, preserving the existing display access:
+
+```bash
+sudo ip netns exec cnc-sim-ns \
+  runuser -u "$USER" -- env \
+  DISPLAY="$DISPLAY" \
+  XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
+  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+  ./build/cnc-sim --config examples/mill/simulator.ini
+```
+
+This is the accepted X11/XWayland launch path. It opens the 3D view with
+400 steps/unit, a 30×20×10-mm workpiece, a 6-mm flat-end tool and material removal
+**off**. For a headless session, copy the INI alongside the original, set
+`[RENDER] ENABLED = false`, and use the existing namespace wrapper:
+
+```bash
+# After creating examples/mill/headless.ini with RENDER.ENABLED = false:
+sudo ./scripts/run-simulator.sh --config examples/mill/headless.ini --no-stats
+```
+
+Keeping the copy in the same directory preserves its relative virtual-I/O path.
+With a headless build, set `CNC_SIM_BINARY` to that executable's absolute path
+when invoking the wrapper. Start the simulator before LinuxCNC: the original HAL
+watchdog does not recover merely because the simulator appears later.
+
+### 4. Start LinuxCNC and observe motion
+
+In another terminal, from the checkout root, as your normal user:
+
+```bash
+linuxcnc examples/phase3/phase3.ini
+```
+
+In LinuxCNC AXIS, release E-stop (F1), enable the machine (F2), and choose
+**Home All**. Keep material removal off and the probe plane disabled during
+homing. Observe the simulator connection, increasing RX/accepted/TX counters,
+virtual switches and XYZ positions. The example has a 1-ms servo period and
+400 steps/mm. Once homing is complete, use LinuxCNC MDI:
+
+```gcode
+G21 G90 G40 G49 G80
+G53 G1 Z-5 F300
+G53 G1 X15 Y4 F300
+```
+
+Wait for each move to finish. In the simulator console enter `material on`, then
+in LinuxCNC MDI enter `G53 G1 Z-12 F120`. The tool should plunge into the stock
+(top at machine Z=-10) and leave a persistent cut. Use `material show` to inspect
+removal state and `material off` before further setup moves. Detailed homing,
+probe-plane and material procedures are in the [documentation](#documentation).
+
+### 5. Shut down
+
+Close LinuxCNC, enter `quit` in the simulator (or close its rendering window),
+then remove the temporary network resources:
 
 ```bash
 sudo ./scripts/teardown-veth.sh
 ```
 
-Die Skripte sind vom aktuellen Arbeitsverzeichnis unabhängig. Sie überschreiben
-keine bestehenden LinuxCNC-Konfigurationen. Ohne Root brechen sie mit einer
-verständlichen Meldung ab; sie fordern selbst kein Passwort an. Setup kann
-für eigene bestehende Ressourcen wiederholt werden. Fremde gleichnamige
-Ressourcen werden nicht entfernt. Teardown verlangt, dass alle Prozesse den
-Namespace verlassen haben. Der Startwrapper verwendet standardmäßig
-`build/cnc-sim`; für andere Buildverzeichnisse kann `CNC_SIM_BINARY` auf einen
-absoluten Programmpfad gesetzt werden.
-
-
-## Phase 3: virtuelle Inputs, Endschalter und Probe
-
-Phase 1, 2 und 3 sind mit echtem LinuxCNC erfolgreich getestet.
-Phase 3 ergänzt die Rückrichtung über die **bestehenden** vier 32-Bit-Inputwörter.
-Ohne Sensor-Konfiguration bleiben alle automatischen Inputs aus und die bisherigen
-Optionen, Recorderbefehle und die Netzwerkarchitektur erhalten.
+For a standalone scene preview without LinuxCNC or namespace setup:
 
 ```bash
-sudo ./scripts/setup-veth.sh
-sudo ./scripts/run-simulator.sh --steps-per-unit 400,400,400,400 --io-config examples/phase3/virtual-io.conf
-# Separates Terminal, normaler Benutzer:
-linuxcnc examples/phase3/phase3.ini
+./build/cnc-sim --config examples/mill/simulator.ini --bind 127.0.0.1
 ```
 
-Wichtiger Originalbefund: 128 Wire-Bits, aber nur **22/26/27/28** werden als
-`stepgen-ninja.0.input.gp22/gp26/gp27/gp28` exportiert, jeweils mit inversen
-`-not`-Pins. Input 0 ist kein Alias für GP22. Deshalb teilen sich X-Min/Max,
-Y-Min/Max und Z-Min/Max jeweils einen Eingang (22/26/27); Probe verwendet 28.
-Die sieben Sensoren bleiben getrennt modelliert und frei zuordenbar. HAL verbindet
-je Achse den gemeinsamen Eingang mit Home, negativem und positivem Limit.
+## Configuration
 
-```text
-input show
-input 22 on
-input 22 off
-input clear
-limits show
-limits set X min -4000 40 22
-limits off X min
-probe plane Z -2000 28
-probe show
-probe off
-help io
+[examples/mill/simulator.ini](examples/mill/simulator.ini) is the practical milling
+profile. Precedence is **defaults < INI < CLI < interactive runtime**. Existing
+no-config defaults and CLI options remain valid; runtime edits are never written
+back to the INI.
+
+Supported sections: `SIMULATOR`, `NETWORK`, `AXIS_X`, `AXIS_Y`, `AXIS_Z`, `AXIS_A`,
+`MATERIAL`, `MESH`, `RENDER`, `WORKPIECE`, `TOOL` and `VIRTUAL_IO`.
+
+```bash
+./build/cnc-sim --config examples/mill/simulator.ini \
+  --material-batch-ms 50 --print-config
+./build/cnc-sim --help
 ```
 
-Alle Konfigurationspositionen sind exakte Schritte ab Simulatorstart. Die
-Beispielschalter liegen bei X/Y=-10 und +80 mm, Z=-30 und +10 mm, mit 40 Schritten
-(0,1 mm bei Scale 400) Hysterese. Min schaltet bei p≤Trigger, löst erst bei
-p≥Trigger+Hysterese; Max entsprechend umgekehrt. Manuelle Bits werden mit den
-automatischen Quellen geodert; `off` entfernt nur den manuellen Override.
-`input show` zeigt sämtliche manuellen, automatischen und effektiven Wörter.
+`--print-config` validates and displays startup settings without opening UDP or
+starting workers. Relative INI file references resolve against the INI directory.
+`VIRTUAL_IO.CONFIG = ../phase3/virtual-io.conf` keeps sensor definitions in their
+existing separate file; CLI `--io-config` paths retain working-directory semantics.
+Unknown sections/keys, duplicates and invalid values are rejected with diagnostics.
+See the [complete schema and semantics](docs/simulator-configuration.md).
+`SPINDLE`, `TOOLSETTER` and geometric `PROBE` sections are unsupported.
 
-Die Probe prüft einen Punkt gegen den Halbraum Z≤-5 mm und berechnet einen
-analytischen Eintrittskontakt zwischen vorheriger und aktueller Pose. Sie ist
-im Startprofil **aus** und wird erst nach der Z-Referenzfahrt aktiviert, da diese
-die spätere Oberfläche durchquert. LinuxCNC führt Homing, Limitreaktionen und
-G38.2 selbst aus. Es gibt keine Simulatorpositionskorrektur oder G-Code-Auswertung.
+## Controls and simulator interaction
 
-`Simulation` wertet Sensoren nach gültiger Schrittintegration und vor dem
-Response-Aufbau aus: Inputs und Position gehören zum selben Paket; die
-Originalprüfsumme wird danach berechnet. Die Sensoren werden im bestehenden
-UDP-Thread synchron ausgewertet; Eingabe, Darstellung und Datei-I/O bleiben
-getrennt. Inputänderungen ohne Bewegung erzeugen keine MotionSamples.
-
-Die feste Terminalanzeige zeigt zusätzlich sechs Schalter, Probe, relevante
-Wire-Bits und manuelle Overrides. Die **vollständige Anleitung mit echten
-HAL-Pins, Homingparametern, G38.2 und Testbefunden** steht in
-[docs/phase3-test.md](docs/phase3-test.md). Die reale Phase-3-Abnahme ist
-erfolgreich abgeschlossen und ergänzt die automatisierten Tests.
-
-## Interaktive Bedienung und Recorder
-
-Ohne Diagnoseoptionen erscheint auf einem Terminal eine feste ANSI-Anzeige mit
-5 Hz: Verbindungsstatus, alle Fehler-/Paketzähler, vier Positionen in Schritten
-und Einheiten, Recorderzustand, Samplezahlen und `Command >`. Mindestens 80×24
-Zeichen verwenden. Es entstehen keine fortlaufenden Statuszeilen. Backspace,
-Ctrl+U (Eingabe löschen), Ctrl+C und `quit` werden unterstützt; Terminalattribute
-und normaler Bildschirm werden beim Beenden wiederhergestellt.
-
-| Befehl | Bedeutung |
+| Control / command | Action |
 |---|---|
-| `record begin` / `begin record` | Neue Aufnahme mit genau einem Startsample; ersetzt eine gestoppte Aufnahme. Während aktiver Aufnahme wirkungsloser Hinweis. |
-| `record stop` / `stop record` | Aufnahme stoppen, Daten behalten. Wiederholtes Stop ist harmlos. |
-| `record clear` / `clear record` | Stoppen und sämtliche aktuellen Samples freigeben. |
-| `record save <datei>` / `save record <datei>` | Konsistenten CSV-Snapshot exportieren; laufende Aufnahme bleibt aktiv. |
-| `status` | Aktuellen vollständigen Status abrufen. |
-| `help` | Befehle, Kurzbeschreibung und Aliase anzeigen. |
-| `quit` | Sauber beenden; bereits gestarteten Export abschließen. |
+| Left / middle mouse button | Orbit / pan |
+| Mouse wheel / Home | Zoom / fit scene |
+| `help`, `help io` | Console command syntax |
+| `status` | Packet, position and runtime diagnostics |
+| `workpiece show` | Current dimensions, placement and voxel size |
+| `tool show`, `tool flat-end 6 20` | Inspect / set flat-end diameter and cutting length in mm |
+| `material on`, `material off`, `material show` | Enable, disable or inspect cutting |
+| `material reset` | Fresh stock with current workpiece settings |
+| `workpiece reset` | Restore compiled workpiece defaults |
+| `input show`, `limits show`, `probe show` | Inspect virtual I/O |
+| `record begin`, `record stop`, `record save motion.csv` | Record and export integrated motion |
+| `quit` | Drain pending work and exit |
 
-`begin` übernimmt die aktuelle vollständige Maschinenposition mit `sequence=0`,
-`time_us=0`, `changed_axes=0`. Danach entsteht genau ein Sample pro gültigem
-Paket mit tatsächlicher Positionsänderung, auch bei simultaner Bewegung mehrerer
-Achsen. Stillstand und verworfene Pakete erzeugen keine Samples. Integer-Schritte
-bleiben autoritativ; Mikrosekunden stammen aus `steady_clock` relativ zu `begin`.
-Bits 0/1/2/3 in `changed_axes` stehen für X/Y/Z/A. Die Folge beginnt pro Aufnahme
-neu; eine Aufnahme setzt niemals die Maschinenposition zurück.
+The terminal supports fixed status display on a TTY and plain stdin/stdout
+commands without a TTY. Use `--no-stats` for plain command output. Sensor positions
+are in steps; workpiece/tool geometry is in millimetres. Recording does not reset
+machine position, and export refuses to overwrite an existing file.
 
-Dateinamen sind relativ zum **Arbeitsverzeichnis beim Programmstart**, auch über
-`run-simulator.sh`. Nach `cd ~/dev/linuxcnc-sim` liegt `circle.csv` dort. Der ganze
-Rest hinter `save` ist der Dateiname; Leerzeichen sind erlaubt, Shell-Anführungszeichen
-werden nicht ausgewertet. Elternverzeichnisse müssen existieren. Bestehende
-Dateien und Symlinks werden atomar abgewiesen, niemals überschrieben. Ein leerer
-Recorder wird nicht gespeichert. Es läuft höchstens ein Export gleichzeitig;
-Erfolg oder Fehler erscheint in der Meldungszeile. Bei Start mit sudo gehören
-exportierte Dateien root (normalerweise für den Benutzer lesbar).
+## Current limitations
 
-CSV beginnt mit drei `#`-Metadatenzeilen; CSV-Leser müssen Kommentarzeilen
-überspringen. Skalierung und Einheiten beschreiben die lokale Konfiguration:
+- Experimental v0.1.0, not a machine safety system or hard-real-time controller.
+- Stepper-Ninja Board-0 UDP is the only supported LinuxCNC transport/profile.
+- Flat-end cutter only; millimetre geometry; axis A does not transform material.
+- Binary voxel-centre removal is resolution-dependent, not CAD-exact machining.
+- No geometric stock probing, toolsetter, spindle/holder simulation or collision
+  model, general collision detection, or rotary material transform.
+- No mechanical dynamics, backlash, cutting forces or physical encoder feedback.
+  The original HAL driver's position feedback is derived from its command.
+- The 128 input wire bits expose only GP22/26/27/28 and their inverses in this HAL
+  profile; the example shares min/max/home signals per axis.
+- One material owner; meshing can use multiple workers. Sustained overload can
+  grow the lossless motion queue in memory.
 
-```csv
-# cnc-sim motion record
-# steps_per_unit=400,400,400,400
-# axis_units=mm,mm,mm,unit
-sequence,time_us,x_steps,y_steps,z_steps,a_steps,changed_axes
-0,0,8000,8000,0,0,0
-1,12000,8001,8000,0,0,1
-2,13000,8002,8001,0,0,3
-```
+## Documentation
 
-Die Aufnahme wächst im RAM in Blöcken von 1024 Samples, ohne feste Samplegrenze.
-Bei Allokationsfehlern stoppt der Recorder sichtbar mit ERROR, behält den gültigen
-Präfix und markiert einen Export als `# incomplete=...`; UDP läuft weiter.
-Ein fehlgeschlagener Neustart lässt die vorige Aufnahme erhalten. Speichern
-löscht keine Samples; Clear/Begin verändern einen bereits gestarteten Export
-nicht. Ein Prozessende ohne Export verwirft die RAM-Aufnahme.
+- [Simulator configuration: complete schema and CLI compatibility](docs/simulator-configuration.md)
+- [Repository layout and vendored dependencies](docs/repository.md)
+- [Original transport/protocol analysis](docs/stepper-ninja-protocol.md)
+- [Virtual I/O, homing and probe-plane procedures](docs/phase3-test.md)
+- [Workpiece coordinates and runtime semantics](docs/phase4a1-design.md)
+- [Material-removal design](docs/phase5-design.md)
+- [Material validation and real LinuxCNC acceptance](docs/phase5-test.md)
+- [Configuration validation and acceptance](docs/phase55-test.md)
+- [v0.1.0 release validation](docs/release-validation-v0.1.0.md)
+- [v0.1.0 release-notes draft](docs/release-notes-v0.1.0.md)
 
-Ein eigener Thread besitzt UDP, Protokoll, MachineState und Recorder. Befehle
-werden zwischen vollständigen Paketen bearbeitet. Die Konsole pollt Eingabe
-separat und erhält konsistente kurze Statuskopien über eine Mutex-Mailbox.
-Ausgabe, Eingabewarten und CSV-Dateioperationen halten diesen Mutex niemals.
-Ein zeitweise vorhandener Exportthread schreibt unveränderliche Blöcke; beim
-Snapshot werden maximal 1024 Samples kopiert, unabhängig von der Gesamtlänge.
-Auch blockierte Terminalausgabe hält deshalb UDP nicht an. Dies ist keine
-Garantie harter Echtzeit unter beliebiger Systemlast.
+Earlier phase-specific design and validation documents remain under `docs/` as
+technical evidence. Their historical test counts describe their original revisions.
 
-Ohne TTY gibt es keine ANSI-Steuerzeichen und keine periodische Ausgabe im
-Standardmodus. Befehle funktionieren auch über stdin-Pipes; EOF allein beendet
-den UDP-Dienst nicht. `--no-stats` aktiviert diesen Modus explizit. Die manuelle
-Abnahme mit LinuxCNC steht in [docs/phase2-test.md](docs/phase2-test.md).
+## Roadmap
 
-## Optionen und Protokollsemantik
+Possible future work includes geometric workpiece probing, a machine-fixed
+toolsetter, a spindle/holder/tool reference model, additional tool geometries,
+collision detection and additional transport adapters. None is implemented or
+scheduled by this release.
 
-`./build/cnc-sim --help` beschreibt die Optionen:
+## Third-party attribution
 
-* `--bind`, `--port`: Standard `192.168.50.2:8888`; Loopback/Port 0 sind für Tests
-  möglich, ohne die Produktionsarchitektur zu verändern.
-* `--steps-per-unit X,Y,Z,A`: lokale Skalierung, standardmäßig jeweils 1000
-  entsprechend der Originalkonfiguration. Für das Beispiel explizit 400 wählen.
-* `--units mm,mm,mm,unit`: reine Anzeigebezeichnungen, keine automatische Umrechnung.
-* `--stats` / `--stats-ms N`: expliziter Legacy-Modus mit fortlaufender Statistik
-  und Positionen; `--no-stats` zeigt Befehlsantworten und die Abschlussstatistik.
-* `--verbose`: zeigt im Textmodus die zuletzt veröffentlichten Paketzähler mit 5 Hz.
-  Einzelpaket-Logs wurden durch zusammengefasste Diagnose ersetzt, damit keine
-  Ausgabewarteschlange im UDP-Pfad wächst. SIGINT/SIGTERM beendet sauber.
+[Stepper-Ninja](https://github.com/atrex66/stepper-ninja) is the upstream project
+by Zsolt Viola. linuxcnc-sim uses its original HAL interface and protocol; it did
+not author them. The minimal unchanged protocol files and HAL test fragment live
+under [third_party/stepper-ninja](third_party/stepper-ninja/UPSTREAM.md), pinned to
+`eb7e5dfa2e76477e606a47038b07cca5e8a4b424`. Their original MIT license and
+**Copyright (c) 2025 Zsolt Viola** remain separately preserved.
 
-Autoritative Positionen sind ganzzahlige Schritte und starten bei null. Eine
-Position in mm entsteht nur aus der lokal konfigurierten Skalierung. Das
-Protokoll überträgt weder Skalierung noch absolute Startposition, und das
-Programm interpretiert die vier Motorachsen nur zur Anzeige als X/Y/Z/A.
+## License
 
-Wire-Kompatibilität: unveränderter C-Protokollkern, Board-0-Profil, 4 Stepgens,
-3 Encoder, 37 Byte Anfrage, 61 Byte Antwort, Originalprüfsumme, ID-Echo modulo
-256. Inputs enthalten die konfigurierten virtuellen Zustände; Encoderzähler/-geschwindigkeiten,
-Indexflags und Ringstatus bleiben null; Encoderzeitstempel laufen in Mikrosekunden seit Simulatorstart weiter.
-Jitter ist der Abstand gültiger Pakete in Mikrosekunden. `enc_control`,
-Ausgangsbits und PWM-Felder bewirken in Phase 1 noch keine Hardwarefunktion.
-
-Ein gültiger Burst wird bei Empfang vollständig integriert. Die Timingbits
-werden getrennt dekodiert, aber elektrische Pulsflanken und PIO-FIFOs werden
-noch nicht zeitlich emuliert. Das entspricht dem Umfang dieser Phase; es ist
-keine neue Bahnplanung. Der Original-Software-Schrittring ist im verwendeten
-Profil abgeschaltet.
-
-Längenfehler, Prüfsummenfehler, ungültiger PIO-Index oder Positionsüberlauf
-bewirken keine Positionsänderung und keine Antwort. Danach wird mit dem nächsten
-gültigen Paket normal fortgefahren; bekannte Firmwarefehler werden nicht
-absichtlich nachgebildet. ID-Abweichungen werden gezählt und synchronisiert,
-Duplikate/umgeordnete Pakete entsprechend dem Original erneut integriert.
-Es gibt keine Retransmission und keine Schätzung verlorener Schritte.
-
-Das Programm simuliert eine Maschine mit einem Sender. Es antwortet jedem
-gültigen Datagramm an dessen tatsächliche Quelladresse/-port; mehrere Sender
-würden denselben Motorzustand und ID-Zähler bedienen. Die Statistik
-`Packet-ID gaps` zählt Abweichungsereignisse, keine eindeutig rekonstruierbare
-Anzahl verlorener Pakete. Nach längeren Pausen bleiben virtuelle Positionen
-und Sequenzzustand erhalten; eine neue Referenz entsteht durch Prozessneustart.
-
-## Quellen und Grenzen
-
-* [Phase-3-Abnahme, Original-HAL-Mapping und Sensorik](docs/phase3-test.md)
-* [Phase-2-Abnahme und Architektur](docs/phase2-test.md)
-* [Phase-1-Aufgabe](docs/CODEX_PHASE1_VIRTUAL_STEPPER_NINJA.md)
-* [Wire-Protokollanalyse](docs/stepper-ninja-protocol.md)
-* [Übernahmeliste und Lizenzbefund](docs/stepper-ninja-files.md)
-* [Herkunft des unveränderten C-Codes](third_party/stepper-ninja/UPSTREAM.md)
-* [Testanleitung und Implementierungsbefunde](docs/phase1-test.md)
-
-Die eingebundenen Originalquellen in `stepper-ninja/` bleiben unverändert.
-Das Produktionsprogramm baut den Protokollkern aus `third_party/` und unseren
-Code; der Test `original-hal-inputs` benötigt zusätzlich den Original-HAL-Code
-in `stepper-ninja/`. Beide Bestände sind als normale Dateien im Repository
-enthalten, einschließlich der benötigten relativen Symlinks, ohne Submodule.
-Herkunft, bewusst ausgeschlossene Upstream-Artefakte, Verzeichnisstruktur und
-lokale/generierte Dateien beschreibt [docs/repository.md](docs/repository.md).
-Paketgrößen, alle Offsets, Profil und Little Endian werden beim Kompilieren abgesichert. Das Programm unterstützt in dieser
-Phase Linux auf Little-Endian-Systemen. Die optionale OpenGL-Ansicht erweitert
-den Simulator um Visualisierung. Phase 5 ergänzt persistenten Voxel-Materialabtrag. Qt, EtherCAT und ein eigener
-G-Code-Interpreter sind nicht enthalten.
-
-Die Antwort bestätigt den Empfang, keine mechanisch gemessene Bewegung. Der
-originale HAL-Treiber erzeugt `motor-pos-fb` selbst aus seinem Sollwert. Ein
-erfolgreicher UDP-Test beweist deshalb noch nicht den vollständigen Lauf mit
-LinuxCNC oder harte Echtzeitfähigkeit eines normalen Userspace-Prozesses.
+linuxcnc-sim is licensed under the [MIT License](LICENSE),
+**Copyright (c) 2026 Frederic Müller**. Bundled Stepper-Ninja code retains its
+[own original MIT license and attribution](third_party/stepper-ninja/LICENSE.txt).

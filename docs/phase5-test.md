@@ -417,7 +417,7 @@ exposed-face-area checks remain active.
 ## Reproduce builds, tests and sanitizers
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCNC_SIM_RENDER=ON -DCNC_SIM_RENDER_TESTS=ON
 cmake --build build -j4
@@ -894,7 +894,7 @@ LinuxCNC homing sequence agree. The known Phase-4A.1 start path is retained.
 Terminal 1, project directory:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/setup-veth.sh
 sudo ip netns exec cnc-sim-ns \
   runuser -u "$USER" -- env \
@@ -932,7 +932,7 @@ Check Material OFF and zero queue/dirty chunks. Probe stays disabled for this te
 Terminal 2:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 linuxcnc examples/phase3/phase3.ini
 ```
 
@@ -1008,6 +1008,6 @@ already closes Phase 5; keep future observations distinct from that accepted run
 After closing LinuxCNC and quitting the simulator:
 
 ```bash
-cd ~/dev/linuxcnc-sim
+# Run from the linuxcnc-sim checkout root.
 sudo ./scripts/teardown-veth.sh
 ```

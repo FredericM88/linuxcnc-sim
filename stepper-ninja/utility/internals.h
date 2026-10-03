@@ -1,1 +1,0 @@
-../firmware/inc/internals.h

@@ -4,6 +4,10 @@ Implementation started from clean HEAD
 `c042166f27c25c46beaebc8605f1a991ded20c48` (Phase 5 accepted).
 Validation date: 2026-10-03. No references were regenerated.
 
+The operator subsequently confirmed manual acceptance of Phase 5.5 against real
+LinuxCNC before v0.1.0 release preparation. No additional measurements were supplied;
+the automated results below remain the recorded evidence for this revision.
+
 The [configuration guide](simulator-configuration.md) records the complete schema,
 precedence, CLI compatibility, units, coordinate responsibilities, relative paths,
 validation and Phase 6 limits. The example is `examples/mill/simulator.ini`.
