@@ -1,0 +1,10 @@
+# Read configuration using LinuxCNC's own make evaluation, without building or installing.
+include @module_modinc_make@
+
+.PHONY: compatibility-config
+compatibility-config:
+	$(info COMPAT_RUN_IN_PLACE=$(RUN_IN_PLACE))
+	$(info COMPAT_BUILDSYS=$(BUILDSYS))
+	$(info COMPAT_EMC2_HOME=$(EMC2_HOME))
+	$(info COMPAT_RTLIBDIR=$(RTLIBDIR))
+	@:

@@ -124,10 +124,11 @@ The build has no installation target and never loads or replaces a HAL module.
 On 2.9, the tests additionally compile the untouched upstream driver as a
 behavioral baseline. `-DBUILD_TESTING=OFF` builds only the driver.
 
-## Compile against uninstalled LinuxCNC 2.10 sources
+## Build against a LinuxCNC source tree
 
-For the local 2.10-pre2 source tree, no configure step, generated headers,
-LinuxCNC libraries or host installation changes are needed for this component:
+`LINUXCNC_SOURCE_DIR` selects the requested tree. A configured userspace RIP tree
+builds a real module; an unconfigured tree retains the source-header compile
+check. Use a separate, clean build directory for each environment:
 
 ```bash
 cmake -S compat/stepper-ninja -B build-hal-2.10 \
@@ -140,21 +141,146 @@ ctest --test-dir build-hal-2.10 --output-on-failure
 
 The baseline option is optional and refers to a prior **2.9** test build. With
 it, the API-1 executable's transcript is compared against unchanged upstream.
-The compile uses actual headers from `src/hal` and `src/rtapi` exclusively,
+Neither source-tree mode installs or loads a module.
+
+### Configured RIP: real module
+
+When `<source>/src/Makefile.modinc` and the generated `<source>/include/hal.h`
+and `rtapi.h` exist, the normal CMake build produces:
+
+```text
+build-hal-2.10/stepgen-ninja.so
+```
+
+The driver is still built from the prepared, hash-verified, patched copy.
+CMake invokes make with the requested RIP tree's own `Makefile.modinc`, which
+supplies the compiler/linker flags, generated include directory and export rules.
+The adapter retains `-Werror=implicit-function-declaration` and
+`-Werror=incompatible-pointer-types`. No temporary hand-written Makefile is needed.
+
+CMake evaluates `RUN_IN_PLACE`, `BUILDSYS`, `EMC2_HOME` and `RTLIBDIR` using make.
+It requires `RUN_IN_PLACE=yes`, `BUILDSYS=uspace`, and canonical home/rtlib paths
+matching the requested tree. A foreign or symlinked `Makefile.modinc`, mismatched
+configuration, or generated HAL/RTAPI header pointing outside the tree is rejected.
+Installed-mode `LINUXCNC_MODINC` and `LINUXCNC_INCLUDE_DIR` cache values are ignored
+when selecting a source tree; there is no fallback to the system installation.
+
+`RTLIBDIR` is validated and reported, but **never used as a copy/install destination**.
+The module remains in the compatibility build directory. Inspection before any
+separate manual runtime test can use:
+
+```bash
+file build-hal-2.10/stepgen-ninja.so
+nm -D build-hal-2.10/stepgen-ninja.so
+```
+
+Build directories, upstream checkout paths and source-tree aliases containing
+spaces are covered by regression tests, as are installed-mode modinc paths with
+spaces. A LinuxCNC tree configured at an actual path containing spaces remains
+subject to LinuxCNC's own generated flags, which this adapter does not rewrite.
+
+### Unconfigured tree: compile check
+
+If `src/Makefile.modinc` is absent, or it belongs to the requested userspace RIP
+tree but the generated HAL/RTAPI headers are incomplete, CMake reports compile-only
+mode. An existing invalid or foreign modinc is an error, not a silent fallback.
+No configure step, generated headers or LinuxCNC libraries are required for the
+compile check. It uses actual headers from `src/hal` and `src/rtapi` exclusively,
 with the userspace realtime defines `USPACE`, `RTAPI`, `_GNU_SOURCE`, `realtime`,
 `__MODULE__`, and `SIM`. Compiler errors are enabled for implicit declarations
 and incompatible pointer types. No substitute HAL headers or 2.9 include paths
 are used.
 
-`stepgen-ninja` is an **object-library target** in source-tree mode. The complete
+`stepgen-ninja` is an **object-library target** in this fallback mode. The complete
 driver is compiled, including the protocol C implementation and Board-0 helper.
 The contract test links a test-only HAL allocator/exporter and intercepts packet
 send/receive; it uses the real API-1 inline getters/setters. It is not a LinuxCNC
-runtime or real shared-memory integration test. Producing/loading a 2.10 module
-with 2.10's own link/export rules would require a configured 2.10 development
-environment (`Makefile.modinc`) and live acceptance; this was not attempted
-during the initial compile validation. The subsequent RIP runtime acceptance
-is documented above; the source-tree CMake mode remains a compile check only.
+runtime or real shared-memory integration test. This mode produces no `.so`.
+
+## Configured RIP CMake integration validation
+
+| Environment | Build and tests |
+|---|---|
+| Installed LinuxCNC 2.9.10, fresh build directory | Real `.so`; 11/11 compatibility tests passed |
+| Configured LinuxCNC 2.10.0~pre2 RIP, fresh build directory | Real x86-64 ELF shared object; 10/10 compatibility tests passed |
+| Isolated unconfigured copy of the real 2.10 source headers | Object compile check, no `.so`; 9/9 compatibility tests passed |
+
+The RIP module references `hal_pin_new_bool`, `hal_pin_new_real`,
+`hal_pin_new_si32` and `hal_pin_new_ui32`, with no old `hal_pin_*_newf` references.
+Tests cover the existing contracts and cross-version parity, builds with spaces,
+unconfigured/incomplete-tree fallback, and rejection of foreign modinc files,
+RIP destinations and generated headers. All tests passed without skips.
+
+The RIP configuration enables `-Wall -Wextra`, exposing six existing unused
+parameter/function/variable warnings in upstream sources. No such source was
+changed to suppress them. The compatibility header, patch, preparation logic,
+vendor snapshot, upstream checkout, simulator sources and frozen references remain
+unchanged. During this automated build/test validation, neither the installed
+system module nor the RIP rtlib module was replaced, and the module was not loaded.
+The subsequent manual smoke acceptance of this build path is recorded below.
+
+### Manual smoke acceptance of the configured-RIP CMake build
+
+The operator reported successful runtime smoke acceptance of the new CMake-built
+module against LinuxCNC **2.10.0~pre2 RIP**, using HAL API 1. The tested artifact was:
+
+```text
+/home/frederic/dev/linuxcnc-sim/build-hal-rip-210/stepgen-ninja.so
+SHA256: 06d03e0440990dedc64aa77f7295b2150a15432efb9137cee2fd47b72dd343aa
+```
+
+`file` identified an ELF 64-bit LSB shared object, x86-64, dynamically linked,
+with debug_info, not stripped. `nm -D` showed:
+
+```text
+U hal_pin_new_bool
+U hal_pin_new_real
+U hal_pin_new_si32
+U hal_pin_new_ui32
+```
+
+There were no old `hal_pin_*_newf` references. The generated module was manually
+copied into the LinuxCNC 2.10 RIP rtlib; the source and copied module SHA256 hashes
+matched exactly. This was a manual test step, not an automatic CMake installation.
+
+Under the LinuxCNC 2.10 RIP environment, the following succeeded:
+
+```hal
+loadrt stepgen-ninja ip_address="192.168.50.2:8888"
+```
+
+The component reached ready state and exported the expected `bool`, `real`,
+`sint` and `uint` pins. The end-to-end simulator smoke test reported
+`Connection: CONNECTED 192.168.50.1:8888`. At the observed endpoint:
+
+| Counter | Result |
+|---|---:|
+| RX | 155536 |
+| Accepted | 155536 |
+| TX | 155536 |
+
+All observed communication error counters were zero: invalid packets, send
+errors, length errors, checksum errors, timing errors, position overflows and
+packet-ID gaps.
+
+Homing completed successfully before the motion test, exercising virtual input
+feedback as well as command transport. The simulator then showed:
+
+| Axis | Steps | Position (mm) |
+|---|---:|---:|
+| X | 4000 | 10.0000 |
+| Y | 4000 | 10.0000 |
+| Z | -2000 | -5.0000 |
+
+LinuxCNC AXIS showed the same X10 Y10 Z-5 position.
+
+This is smoke acceptance specifically of the **new configured-RIP CMake module
+build path**. Probe, material removal and the complete earlier runtime acceptance
+suite were **not repeated** with this module. The separate
+[full LinuxCNC 2.10 runtime acceptance record](linuxcnc-2.10-runtime-acceptance.md)
+remains unchanged and describes the previous manually built module from commit
+`9758646`. The known upstream checksum/connected-reference bug remains unfixed;
+this error-free smoke run does not validate checksum-failure recovery.
 
 ## Validation on 2026-10-03
 

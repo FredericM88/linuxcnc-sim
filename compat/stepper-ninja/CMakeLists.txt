@@ -3,7 +3,7 @@ project(stepper_ninja_hal_compat LANGUAGES C)
 
 # Standalone and opt-in: normal simulator builds need neither HAL nor upstream.
 set(STEPPER_NINJA_SOURCE "" CACHE PATH "Separate pinned upstream Stepper-Ninja checkout")
-set(LINUXCNC_SOURCE_DIR "" CACHE PATH "Compile-check only against an uninstalled LinuxCNC source tree")
+set(LINUXCNC_SOURCE_DIR "" CACHE PATH "LinuxCNC source tree: configured RIP module build or source compile check")
 if(NOT STEPPER_NINJA_SOURCE)
     message(FATAL_ERROR "Set STEPPER_NINJA_SOURCE to the pinned upstream checkout root")
 endif()
@@ -25,15 +25,78 @@ execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/pre
     --source "${STEPPER_NINJA_SOURCE}" --output "${prepared}"
     COMMAND_ERROR_IS_FATAL ANY)
 
+set(module_modinc "")
+set(module_extra_includes "")
 if(LINUXCNC_SOURCE_DIR)
-    # No installed LinuxCNC includes, modinc, libraries or generated headers.
-    # These are the userspace realtime-module defines, not an ABI/link test.
+    file(REAL_PATH "${LINUXCNC_SOURCE_DIR}" linuxcnc_source)
     foreach(header src/hal/hal.h src/rtapi/rtapi.h)
-        if(NOT EXISTS "${LINUXCNC_SOURCE_DIR}/${header}")
+        if(NOT EXISTS "${linuxcnc_source}/${header}")
             message(FATAL_ERROR "Missing LinuxCNC source header: ${header}")
         endif()
     endforeach()
-    set(hal_includes "${LINUXCNC_SOURCE_DIR}/src/hal" "${LINUXCNC_SOURCE_DIR}/src/rtapi")
+    set(hal_includes "${linuxcnc_source}/src/hal" "${linuxcnc_source}/src/rtapi")
+    set(rip_modinc "${linuxcnc_source}/src/Makefile.modinc")
+    # Watch creation/removal as well as changes when a tree becomes configured.
+    file(GLOB rip_environment CONFIGURE_DEPENDS "${rip_modinc}"
+        "${linuxcnc_source}/include/hal.h" "${linuxcnc_source}/include/rtapi.h")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${rip_environment})
+    if(EXISTS "${rip_modinc}")
+        file(REAL_PATH "${rip_modinc}" rip_modinc_real)
+        if(NOT rip_modinc_real STREQUAL rip_modinc)
+            message(FATAL_ERROR "RIP Makefile.modinc must belong to the requested tree: ${rip_modinc}")
+        endif()
+        find_program(MAKE_PROGRAM NAMES gmake make REQUIRED)
+        # Ask make to evaluate its configuration; do not infer compiler/link flags.
+        string(REPLACE " " "\\ " module_modinc_make "${rip_modinc}")
+        configure_file(rip-config.mk.in "${CMAKE_CURRENT_BINARY_DIR}/Makefile.rip-config" @ONLY)
+        execute_process(COMMAND "${MAKE_PROGRAM}" --no-print-directory -f Makefile.rip-config
+            "CC=${CMAKE_C_COMPILER}" compatibility-config
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            RESULT_VARIABLE rip_result OUTPUT_VARIABLE rip_config ERROR_VARIABLE rip_error)
+        if(NOT rip_result EQUAL 0)
+            message(FATAL_ERROR "Cannot evaluate requested RIP Makefile.modinc: ${rip_error}")
+        endif()
+        foreach(key RUN_IN_PLACE BUILDSYS EMC2_HOME RTLIBDIR)
+            if(NOT rip_config MATCHES "COMPAT_${key}=([^\r\n]*)")
+                message(FATAL_ERROR "Missing ${key} in requested RIP Makefile.modinc")
+            endif()
+            set(rip_${key} "${CMAKE_MATCH_1}")
+        endforeach()
+        file(REAL_PATH "${rip_EMC2_HOME}" rip_home)
+        file(REAL_PATH "${rip_RTLIBDIR}" rip_rtlib)
+        file(REAL_PATH "${linuxcnc_source}/rtlib" expected_rtlib)
+        if(NOT rip_RUN_IN_PLACE STREQUAL "yes" OR NOT rip_home STREQUAL linuxcnc_source
+                OR NOT rip_rtlib STREQUAL expected_rtlib)
+            message(FATAL_ERROR "Makefile.modinc is not configured for the requested RIP tree: ${linuxcnc_source}")
+        endif()
+        if(NOT rip_BUILDSYS STREQUAL "uspace")
+            message(FATAL_ERROR "The RIP module build requires LinuxCNC BUILDSYS=uspace")
+        endif()
+        if(EXISTS "${linuxcnc_source}/include/hal.h" AND EXISTS "${linuxcnc_source}/include/rtapi.h")
+            foreach(header hal.h rtapi.h)
+                file(REAL_PATH "${linuxcnc_source}/include/${header}" generated_header)
+                string(FIND "${generated_header}" "${linuxcnc_source}/" inside_tree)
+                if(NOT inside_tree EQUAL 0)
+                    message(FATAL_ERROR "Generated RIP header points outside the requested tree: ${header}")
+                endif()
+            endforeach()
+            set(module_modinc "${rip_modinc}")
+            set(hal_includes "${linuxcnc_source}/include")
+            message(STATUS "Configured RIP module build; rtlib is informational only: ${rip_RTLIBDIR}")
+        else()
+            message(STATUS "RIP generated headers are incomplete; using source compile check")
+        endif()
+    endif()
+else()
+    find_path(LINUXCNC_INCLUDE_DIR hal.h PATHS /usr/include/linuxcnc /usr/local/include/linuxcnc REQUIRED)
+    find_file(LINUXCNC_MODINC Makefile.modinc PATHS /usr/share/linuxcnc /etc/linuxcnc /usr/lib/linuxcnc REQUIRED)
+    set(module_modinc "${LINUXCNC_MODINC}")
+    set(module_extra_includes "-I\"${LINUXCNC_INCLUDE_DIR}\"")
+    set(hal_includes "${LINUXCNC_INCLUDE_DIR}")
+endif()
+
+if(NOT module_modinc)
+    # Unconfigured source-tree fallback only; these defines do not build a module.
     add_library(stepgen-ninja OBJECT "${prepared}/stepgen-ninja.c")
     target_include_directories(stepgen-ninja PRIVATE "${prepared}" ${hal_includes})
     target_compile_definitions(stepgen-ninja PRIVATE USPACE RTAPI _GNU_SOURCE realtime __MODULE__ SIM)
@@ -42,20 +105,19 @@ if(LINUXCNC_SOURCE_DIR)
     set_target_properties(stepgen-ninja PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
     message(STATUS "Compile check only; no loadable module or install target")
 else()
-    find_path(LINUXCNC_INCLUDE_DIR hal.h PATHS /usr/include/linuxcnc /usr/local/include/linuxcnc REQUIRED)
-    find_file(LINUXCNC_MODINC Makefile.modinc PATHS /usr/share/linuxcnc /etc/linuxcnc /usr/lib/linuxcnc REQUIRED)
     find_program(MAKE_PROGRAM NAMES gmake make REQUIRED)
-    set(hal_includes "${LINUXCNC_INCLUDE_DIR}")
+    string(REPLACE " " "\\ " module_modinc_make "${module_modinc}")
     configure_file(module.mk.in "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal" @ONLY)
     file(GLOB_RECURSE prepared_inputs "${prepared}/*")
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/stepgen-ninja.so"
         COMMAND "${MAKE_PROGRAM}" -f Makefile.hal "CC=${CMAKE_C_COMPILER}" modules
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        DEPENDS ${prepared_inputs} "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal"
+        DEPENDS ${prepared_inputs} "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal" "${module_modinc}"
         BYPRODUCTS stepgen-ninja.o stepgen-ninja.tmp stepgen-ninja.ver
         VERBATIM)
     add_custom_target(stepgen-ninja ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/stepgen-ninja.so")
-    message(STATUS "HAL headers: ${LINUXCNC_INCLUDE_DIR}; build rules: ${LINUXCNC_MODINC}")
+    message(STATUS "HAL headers: ${hal_includes}; build rules: ${module_modinc}")
+    message(STATUS "Module output: ${CMAKE_CURRENT_BINARY_DIR}/stepgen-ninja.so (no automatic installation)")
 endif()
 
 include(CTest)

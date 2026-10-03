@@ -28,3 +28,12 @@ if(HAL_BASELINE_EXECUTABLE)
     add_test(NAME hal-cross-version-parity COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/compare.py" "${HAL_BASELINE_EXECUTABLE}" "$<TARGET_FILE:hal-driver-contract>")
 endif()
+
+if(module_modinc)
+    add_test(NAME hal-module-build-mode COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/build_modes.py"
+        --cmake "${CMAKE_COMMAND}" --compiler "${CMAKE_C_COMPILER}"
+        --upstream "${STEPPER_NINJA_SOURCE}" --modinc "${module_modinc}"
+        --includes "${hal_includes}" --linuxcnc-source "${LINUXCNC_SOURCE_DIR}")
+    set_tests_properties(hal-module-build-mode PROPERTIES TIMEOUT 120)
+endif()
