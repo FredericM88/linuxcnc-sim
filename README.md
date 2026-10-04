@@ -204,7 +204,9 @@ In LinuxCNC AXIS, release E-stop (F1), enable the machine (F2), and choose
 **Home All**. Keep material removal off and the probe plane disabled during
 homing. Observe the simulator connection, increasing RX/accepted/TX counters,
 virtual switches and XYZ positions. The example has a 1-ms servo period and
-400 steps/mm. Once homing is complete, use LinuxCNC MDI:
+400 steps/mm, with machine travel X=0..600 mm, Y=0..400 mm and Z=-200..0 mm.
+X/Y home toward their lower switches; Z homes upward toward its max switch at
++1 mm and then returns to G53 Z=0. Once homing is complete, use LinuxCNC MDI:
 
 ```gcode
 G21 G90 G40 G49 G80

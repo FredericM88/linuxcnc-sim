@@ -2,10 +2,12 @@
 
 ## Ausgangsbasis und wichtiger Befund
 
-**Status: Phase 1, Phase 2 und Phase 3 sind abgeschlossen und real mit LinuxCNC
-getestet.** Die vom Benutzer bestätigten Phase-3-Messergebnisse stehen im
-Abschnitt [Reale Phase-3-Abnahme mit LinuxCNC](#reale-phase-3-abnahme-mit-linuxcnc).
-Die nachstehenden manuellen Testschritte dienen der Wiederholung der Abnahme.
+**Status: Phase 1, Phase 2 und die ursprüngliche Phase-3-Konfiguration wurden real
+mit LinuxCNC getestet.** Die unten dokumentierte reale Phase-3-Abnahme ist ein
+historisches Ergebnis vor der Umstellung auf den realistischeren Verfahrweg und
+Z-Referenzierung am oberen Schalter. Die aktualisierte Z-Max-Referenzfahrt muss
+vor dem nächsten Commit noch mit LinuxCNC 2.10 wiederholt werden. Die
+nachstehenden manuellen Testschritte beschreiben die aktuelle Konfiguration.
 
 Diese Phase erweitert den bestehenden Rückkanal. Originalcheckout und die neun
 importierten Originaldateien bleiben unverändert. Request/Response bleiben
@@ -152,12 +154,12 @@ MotionSamples.
 
 | Sensor | Trigger Schritte | Einheit bei 400 steps/mm | Hysterese | Input |
 |---|---:|---:|---:|---:|
-| X-Min | -4000 | -10 mm | 40 Schritte = 0,1 mm | 22 |
-| X-Max | 32000 | 80 mm | 40 Schritte | 22 |
-| Y-Min | -4000 | -10 mm | 40 Schritte | 26 |
-| Y-Max | 32000 | 80 mm | 40 Schritte | 26 |
-| Z-Min | -12000 | -30 mm | 40 Schritte | 27 |
-| Z-Max | 4000 | 10 mm | 40 Schritte | 27 |
+| X-Min | -400 | -1 mm | 40 Schritte = 0,1 mm | 22 |
+| X-Max | 240400 | 601 mm | 40 Schritte | 22 |
+| Y-Min | -400 | -1 mm | 40 Schritte | 26 |
+| Y-Max | 160400 | 401 mm | 40 Schritte | 26 |
+| Z-Min | -80400 | -201 mm | 40 Schritte | 27 |
+| Z-Max | 400 | +1 mm | 40 Schritte | 27 |
 | Probe, nach Homing aktivieren | -2000 | Z=-5 mm | keine | 28 |
 
 Min: EIN bei `p <= trigger`, AUS erst bei `p >= trigger + hysteresis`.
@@ -190,24 +192,37 @@ for one axis“ ist hier maßgeblich, nicht sieben erfundene GPIO-Pins.
 
 Homingparameter pro Joint:
 
-- `HOME_SEARCH_VEL=-2` mm/s und `HOME_LATCH_VEL=-0.2` mm/s: negative Suchfahrt,
-  Bremsen, Freifahren in positiver Richtung, erneute langsame negative Anfahrt.
-  Wenn der Schalter bereits anfangs aktiv ist, fährt LinuxCNC zuerst frei.
-- `HOME_OFFSET=-10` für X/Y und `-30` für Z: physischer Trigger in mm.
+- X/Y: `HOME_SEARCH_VEL=-2` mm/s, `HOME_LATCH_VEL=-0.2` mm/s und
+  `HOME_OFFSET=-1`. Beide Achsen suchen und latchen in negativer Richtung am
+  Min-Schalter; die Freifahrt erfolgt positiv.
+- Z: `HOME_SEARCH_VEL=+2` mm/s, `HOME_LATCH_VEL=+0.2` mm/s und
+  `HOME_OFFSET=+1`. Z nähert sich dem oberen Max-Schalter von unten in positiver
+  Richtung, fährt zum Lösen negativ und nähert sich zum Latch erneut positiv.
+  Wenn ein Schalter bereits anfangs aktiv ist, fährt LinuxCNC zuerst frei.
 - `HOME=0`, `HOME_FINAL_VEL=5`: nach Latch zur freien Nullposition fahren.
 - `HOME_USE_INDEX=NO`, `HOME_IGNORE_LIMITS=YES`, `HOME_SEQUENCE=0,1,2`:
   nacheinander X/Y/Z ohne Encoderindex referenzieren.
-- Softlimits X/Y=-9..79 mm und Z=-29..9 mm liegen innerhalb der physischen
-  Schalter; im referenzierten Normalbetrieb verhindert LinuxCNC das Anfahren
-  der Hardlimits. Zum gezielten Schaltertest vor der Referenzierung joggen.
+- Softlimits X=0..600 mm, Y=0..400 mm und Z=-200..0 mm liegen jeweils genau
+  1 mm innerhalb der physischen Schalter. Im referenzierten Normalbetrieb
+  verhindert LinuxCNC das Anfahren der Hardlimits. Zum gezielten Schaltertest
+  vor der Referenzierung joggen.
+
+Die Koordinatenarten dürfen dabei nicht vermischt werden: Der Simulator zählt
+rohe Schritte ab seinem Start. Der physische Z-Max-Schalter schaltet bei
+`+400` Schritten (`+1 mm`). `HOME_OFFSET=+1` teilt LinuxCNC mit, dass die
+gelatchte physische Position die Maschinenkoordinate `+1 mm` hat; es setzt die
+Simulatorposition nicht zurück. Die anschließende Fahrt zu `HOME=0` bewegt Z
+ideal um `-1 mm`, sodass der rohe Simulatorstand wieder 0 Schritte und die
+LinuxCNC-G53-Koordinate 0 mm ist.
 
 Die Bedeutung dieser Parameter und gemeinsamer Schalter wurde zusätzlich in
 der installierten offiziellen Dokumentation geprüft:
 `/usr/share/doc/linuxcnc/LinuxCNC_Documentation.pdf`, Abschnitte 3.1 (gemeinsame
 Schalter), 4.5.6.1–4.5.6.8 (Homing) und INI-Parameter
 `NO_PROBE_HOME_ERROR`/`NO_PROBE_JOG_ERROR`. Diese Fehlerprüfungen werden nicht
-abgeschaltet. **Die Probe ist deshalb im Startprofil aus**: Die Z-Homingfahrt
-bis -30 mm würde sonst schon die spätere Probe-Ebene bei -5 mm betreten.
+abgeschaltet. **Die Probe bleibt im Startprofil aus**, damit Homing und Probe-I/O
+unabhängig geprüft werden und ein Start unterhalb der Probe-Ebene die
+Referenzierung nicht blockiert.
 
 ## Probe und Sweep
 
@@ -302,9 +317,9 @@ für Probe-Pinprüfung: `input 28 on`, `halcmd getp motion.probe-input`, danach
 
 In LinuxCNC F1 (Not-Aus zurücksetzen), F2 (Maschine ein), noch nicht referenzieren.
 Die Schrittposition startet bei 0, Probe ist aus. X vorsichtig mit kleiner
-Joggeschwindigkeit negativ fahren (etwa 1 mm/s). Bei X ≤ -4000 Schritten muss
+Joggeschwindigkeit negativ fahren (etwa 1 mm/s). Bei X ≤ -400 Schritten muss
 X-Min ON und Wire22=1 werden. LinuxCNC muss den Hardlimit erkennen und stoppen.
-Die endgültige Bremsposition kann bereits unter -4000 liegen; dies ist keine
+Die endgültige Bremsposition kann bereits unter -400 liegen; dies ist keine
 veränderte Schaltschwelle.
 
 Prüfen:
@@ -317,7 +332,7 @@ halcmd getp joint.0.pos-lim-sw-in
 
 Erwartet alle TRUE wegen der gemeinsamen Verdrahtung. Für die Freifahrt die
 LinuxCNC-Option „Override Limits“ benutzen, Maschine ggf. wieder einschalten und
-X positiv vom Schalter weg joggen. Bei X ≥ -3960 Schritten muss X-Min OFF und
+X positiv vom Schalter weg joggen. Bei X ≥ -360 Schritten muss X-Min OFF und
 Wire22=0 sein; innerhalb des Hysteresebands bleibt er ON. Override danach
 zurücknehmen. Keine `setp`-Zwangswerte auf HAL_OUT-Pins schreiben und keine
 Simulatorpositionskorrektur verwenden. Alternativ kann LinuxCNC beim anschließenden
@@ -334,11 +349,13 @@ limits show
 record begin
 ```
 
-In LinuxCNC „Home All“ starten. Erwartete Reihenfolge X, Y, Z: Suchfahrt,
-Schalter EIN, Bremsen, positive Freifahrt bis Schalter AUS, langsamere negative
-Anfahrt bis EIN, anschließend Endfahrt zur Home-Position 0. Es handelt sich
-nicht um die sofortige Referenzierung aus Phase 1. HOME_IGNORE_LIMITS gilt nur
-während dieser von LinuxCNC ausgeführten Sequenz.
+In LinuxCNC „Home All“ starten. Erwartete Reihenfolge X, Y, Z: X und Y suchen
+negativ, fahren positiv frei und latchen erneut negativ. Z sucht dagegen von
+unten in positiver Richtung bis Z-Max bei ungefähr +400 Rohschritten, fährt
+negativ bis spätestens +360 Schritte frei und latcht erneut positiv. Danach
+fährt jede Achse zur Home-Position 0. Es handelt sich nicht um die sofortige
+Referenzierung aus Phase 1. `HOME_IGNORE_LIMITS` gilt nur während dieser von
+LinuxCNC ausgeführten Sequenz.
 
 Terminal C danach:
 
@@ -352,11 +369,19 @@ halcmd getp stepgen-ninja.0.input.gp27
 ```
 
 Erwartet drei TRUE für homed und drei FALSE für die freigefahrenen Schalter.
-LinuxCNC zeigt Maschinenkoordinaten 0/0/0. Simulatorpositionen liegen nahe
-0/0/0 Schritten; kleine Unterschiede sind durch die digitale Abtastung der
-Latchposition und Schrittquantisierung möglich. LinuxCNC setzt seinen eigenen
-Referenzoffset; die physische Step-Historie wird im Simulator nicht verändert.
-Für Vergleiche zwischen beiden Koordinatensystemen diesen Unterschied beachten.
+LinuxCNC zeigt G53-Maschinenkoordinaten 0/0/0. Simulatorpositionen liegen nahe
+0/0/0 Rohschritten. Kleine Restwerte können entstehen, weil LinuxCNC den
+gelatchten Schalterzustand nur im Servozyklus sieht und der Simulator ganze
+Schritte integriert. LinuxCNC setzt seinen eigenen Referenzoffset; die rohe
+Step-Historie im Simulator wird nicht teleportiert oder zurückgesetzt.
+
+Ein falsches Vorzeichen ist dagegen kein kleiner Abtasteffekt: Wenn Z am
+physischen `+1-mm`-Schalter fälschlich `HOME_OFFSET=-1` erhielte, würde die
+Endfahrt nach `HOME=0` nochmals positiv fahren und ideal bei `+800` Rohschritten
+enden. `HOME_OFFSET=0` ließe ideal `+400` Rohschritte stehen. Nur der passende
+Wert `+1` führt vom oberen Schalter durch die negative Endfahrt ideal zurück zu
+0 Rohschritten. Nach dem Homing deshalb sowohl AXIS/G53 als auch den
+Simulator-Rohstand vergleichen.
 
 Simulator:
 
@@ -365,7 +390,20 @@ record stop
 record save phase3-home.csv
 ```
 
-Die Aufnahme muss echte negative/positive Fahrbewegungen enthalten, keine
+Danach als expliziten Offsettest in LinuxCNC ausführen:
+
+```gcode
+G53 G0 X10 Y10 Z-5
+```
+
+Ohne Restwert aus der Latchabtastung muss der Simulator genau
+`X=4000, Y=4000, Z=-2000` Rohschritte anzeigen. Ein bereits direkt nach Homing
+sichtbarer kleiner Rohschritt-Restwert bleibt bei diesem Vergleich als konstanter
+Offset erhalten. Ein Fehler um ungefähr 400 oder 800 Z-Schritte deutet dagegen
+auf `HOME_OFFSET=0` beziehungsweise das falsche Vorzeichen `-1` hin.
+
+Die Aufnahme muss für X/Y die negative und für Z die positive Schalteranfahrt
+sowie die jeweiligen Gegenrichtungen enthalten, keine
 Homing-Teleportation und keine Sampleflut im anschließenden Stillstand. Die
 Beispielmaschine stellt bei Schrittänderungen nur lokale Sollwertkopien als
 HAL-Motorfeedback bereit; das ist das unveränderte Verhalten des Originaltreibers.
@@ -375,7 +413,7 @@ HAL-Motorfeedback bereit; das ist das unveränderte Verhalten des Originaltreibe
 Nach erfolgreichem Homing, Probe noch aus, LinuxCNC-MDI:
 
 ```gcode
-G21 G90 G53 G1 Z2 F120
+G21 G90 G53 G1 Z0 F120
 ```
 
 Stillstand abwarten. Im Simulator die Probe ausdrücklich aktivieren:
@@ -393,10 +431,10 @@ halcmd getp stepgen-ninja.0.input.gp28
 halcmd getp motion.probe-input
 ```
 
-Beide FALSE. LinuxCNC-MDI, inkrementelle Fahrt um 12 mm nach unten:
+Beide FALSE. LinuxCNC-MDI, inkrementelle Fahrt um 10 mm nach unten:
 
 ```gcode
-G91 G38.2 Z-12 F50
+G91 G38.2 Z-10 F50
 G90
 ```
 
@@ -429,7 +467,7 @@ Der HAL-Pin `motion.probed-position` existiert in dieser Konfiguration **nicht**
 LinuxCNC-MDI zum Rückzug:
 
 ```gcode
-G90 G53 G1 Z2 F120
+G90 G53 G1 Z0 F120
 ```
 
 Nach Überschreiten der Ebene müssen beide Eingangspins wieder FALSE sein.
@@ -486,8 +524,9 @@ Neue Tests:
 - `io_terminal`: echtes PTY mit 80×24, aktive Inputs/Sensoren, Show-/Help-Befehle,
   Recorder-/Kommandoanzeige ohne Scrollen und Wiederherstellung des Terminals.
 - `phase3-configuration`: Konsistenz der separaten INI/HAL und des Sensorprofils,
-  echte Pin-Netze, passende Home-Offsets, Softlimits, Servozeit/Skalierung und
-  deaktivierte Probe vor der Homingfahrt.
+  exakte Soft-/physische Limits, echte Pin-Netze, X/Y-Min- und Z-Max-Homingrichtung,
+  passende Home-Offsets samt idealer Rückkehr auf Rohschritt 0,
+  Servozeit/Skalierung und deaktivierte Probe vor der Homingfahrt.
 
 Alle elf bestehenden Phase-1/2-Tests bleiben unverändert und müssen zusätzlich
 bestehen, einschließlich rootlosem veth-/Namespace-Test, Originaldatei-Integrität,
@@ -561,9 +600,10 @@ Die Simulatorlogik wurde für Dokumentation und Initialcommit nicht geändert.
 
 **Erfolgreich abgeschlossen, vom Benutzer am 26.09.2026 berichtet.** Diese
 Ergebnisse stammen aus dem realen gemeinsamen Lauf von Simulator und LinuxCNC
-mit der Phase-3-Konfiguration und dem originalen Stepper-Ninja-HAL-Treiber.
-Sie ergänzen die automatisierten Tests; bei dieser Dokumentationsarbeit wurde
-keine erneute interaktive LinuxCNC-Abnahme durchgeführt.
+mit der damaligen Phase-3-Konfiguration und dem originalen
+Stepper-Ninja-HAL-Treiber. Sie belegen den Rückkanal, aber noch nicht die jetzige
+positive Z-Max-Referenzfahrt. Dafür ist eine erneute interaktive LinuxCNC-2.10-
+Abnahme erforderlich.
 
 ### Stabilität und manueller VirtualIO-Rückkanal
 

@@ -38,6 +38,11 @@ int main() {
         for (auto [pos,active] : {std::pair{99,false},{100,true},{99,true},{91,true},{90,false},{99,false}}) {
             sensor.update({0,pos,0,0}); CHECK(sensor.status().active==active);
         }
+        // Phase 3 Z approaches its max/home switch from below in the positive direction.
+        sensor.configure({2,27,false,400,40});
+        for (auto [pos,active] : {std::pair{399,false},{400,true},{399,true},{361,true},{360,false},{399,false}}) {
+            sensor.update({0,0,pos,0}); CHECK(sensor.status().active==active);
+        }
         for (bool minimum : {false,true}) {
             sensor.configure({0,22,minimum,0,0});
             for (int i=0;i<100;++i) { sensor.update({}); CHECK(sensor.status().active); }
@@ -109,6 +114,6 @@ int main() {
         CHECK(recorder.count()==2 && response.inputs[3]==0x80000000u);
         response=cycle(2,2,4000); CHECK(response.inputs[0]==0 && response.inputs[3]==0x80000000u);
         CHECK(recorder.count()==3 && protocol.stats().packet_id_gaps==0);
-        std::cout<<"PASS: 128 inputs, OR, range, limit boundaries/hysteresis/overflow, probe sweep/retract, parser, same-packet response+checksum, recorder\n";
+        std::cout<<"PASS: 128 inputs, OR, range, limit boundaries/hysteresis/overflow including Phase-3 Z max, probe sweep/retract, parser, same-packet response+checksum, recorder\n";
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }
