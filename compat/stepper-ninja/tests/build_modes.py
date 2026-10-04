@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import tempfile
 
+from hal_api_symbols import assert_pin_symbols, detect_hal_api
+
 parser = argparse.ArgumentParser(description=__doc__)
 for option in ("cmake", "compiler", "upstream", "modinc", "includes", "linuxcnc-source"):
     parser.add_argument(f"--{option}", required=True)
@@ -54,10 +56,11 @@ with tempfile.TemporaryDirectory(prefix="hal-build-modes-") as temporary:
     symbols = run(["nm", "-D", str(module)])
     assert " T rtapi_app_main" in symbols and " T rtapi_app_exit" in symbols
     if args.linuxcnc_source:
-        for suffix in ("bool", "real", "si32", "ui32"):
-            assert f" U hal_pin_new_{suffix}\n" in symbols, symbols
-        assert "_newf" not in symbols, symbols
-
+        hal_header = source / "include" / "hal.h"
+    else:
+        hal_header = Path(args.includes) / "hal.h"
+    assert_pin_symbols(symbols, detect_hal_api(hal_header))
+    if args.linuxcnc_source:
         # A private source-header fixture leaves the real configured tree intact.
         fixture = root / "unconfigured"
         for directory in ("hal", "rtapi"):

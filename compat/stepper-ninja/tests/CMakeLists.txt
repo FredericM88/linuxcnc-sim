@@ -9,6 +9,8 @@ endfunction()
 driver_contract(hal-driver-contract "${prepared}/stepgen-ninja.c")
 add_test(NAME hal-source-preparation COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/preparation.py" "${STEPPER_NINJA_SOURCE}")
+add_test(NAME hal-api-symbol-detection COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/hal_api_symbols_test.py")
 foreach(pin 0 9 10 11 40 65)
     add_test(NAME hal-create-failure-${pin} COMMAND hal-driver-contract ${pin})
 endforeach()
