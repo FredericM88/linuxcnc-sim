@@ -243,7 +243,7 @@ no-config defaults and CLI options remain valid; runtime edits are never written
 back to the INI.
 
 Supported sections: `SIMULATOR`, `NETWORK`, `AXIS_X`, `AXIS_Y`, `AXIS_Z`, `AXIS_A`,
-`MATERIAL`, `MESH`, `RENDER`, `WORKPIECE`, `TOOL` and `VIRTUAL_IO`.
+`MATERIAL`, `MESH`, `RENDER`, `WORKPIECE`, `TOOL`, `SPINDLE` and `VIRTUAL_IO`.
 
 ```bash
 ./build/cnc-sim --config examples/mill/simulator.ini \
@@ -257,7 +257,7 @@ starting workers. Relative INI file references resolve against the INI directory
 existing separate file; CLI `--io-config` paths retain working-directory semantics.
 Unknown sections/keys, duplicates and invalid values are rejected with diagnostics.
 See the [complete schema and semantics](docs/simulator-configuration.md).
-`SPINDLE`, `TOOLSETTER` and geometric `PROBE` sections are unsupported.
+`TOOLSETTER` and geometric `PROBE` sections are unsupported.
 
 ## Controls and simulator interaction
 
@@ -287,10 +287,11 @@ machine position, and export refuses to overwrite an existing file.
 - Stepper-Ninja Board-0 UDP is the only supported LinuxCNC transport/profile.
 - Flat-end cutter only; millimetre geometry; axis A does not transform material.
 - Binary voxel-centre removal is resolution-dependent, not CAD-exact machining.
-- No geometric stock probing, toolsetter, spindle/holder simulation or collision
+- No geometric stock probing, toolsetter, spindle/holder geometry or collision
   model, general collision detection, or rotary material transform.
-- No mechanical dynamics, backlash, cutting forces or physical encoder feedback.
-  The original HAL driver's position feedback is derived from its command.
+- No mechanical dynamics, backlash, cutting forces, spindle acceleration/load/slip,
+  or physical axis encoder feedback. Spindle encoder feedback is synthesized from
+  the commanded physical spindle model.
 - The 128 input wire bits expose only GP22/26/27/28 and their inverses in this HAL
   profile; the example shares min/max/home signals per axis.
 - One material owner; meshing can use multiple workers. Sustained overload can

@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include "machine/MachineState.hpp"
+#include "spindle/VirtualSpindle.hpp"
 
 namespace cnc {
 struct StepBurst {
@@ -15,6 +16,9 @@ struct StepBurst {
     }
 };
 StepBurst decode_step_burst(std::uint32_t word);
+std::uint16_t decode_pwm_wrap(std::uint32_t frequency);
+double decode_pwm_fraction(std::uint32_t duty, std::uint32_t frequency);
+SpindleCommand decode_spindle_command(const Request& request);
 
 class PacketSequence {
 public:
@@ -40,6 +44,7 @@ struct AcceptedPacket {
     std::uint8_t id{};
     std::uint64_t elapsed_us{};
     std::uint32_t jitter{};
+    SpindleCommand spindle_command;
 };
 
 class StepperNinjaProtocol {
@@ -52,7 +57,8 @@ public:
     // succeeds and before building the response for the same packet.
     std::optional<AcceptedPacket> accept(std::span<const std::uint8_t> packet, std::uint64_t elapsed_us);
     static Response make_response(const AcceptedPacket& packet,
-                                  const std::array<std::uint32_t, 4>& inputs = {});
+                                  const std::array<std::uint32_t, 4>& inputs = {},
+                                  const SpindleFeedback* spindle = nullptr);
     const MachineState& machine() const { return machine_; }
     const Statistics& stats() const { return stats_; }
 private:

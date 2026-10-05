@@ -82,7 +82,8 @@ const std::map<std::string, std::set<std::string>> schema{
     {"AXIS_Z", {"TYPE", "STEPS_PER_UNIT"}}, {"AXIS_A", {"TYPE", "STEPS_PER_UNIT"}},
     {"MATERIAL", {"ENABLED", "BATCH_MS", "WORKERS"}}, {"MESH", {"WORKERS"}},
     {"RENDER", {"ENABLED"}}, {"WORKPIECE", {"SIZE", "POSITION", "ORIGIN", "VOXEL_SIZE"}},
-    {"TOOL", {"TYPE", "DIAMETER", "CUTTING_LENGTH"}}, {"VIRTUAL_IO", {"CONFIG"}}
+    {"TOOL", {"TYPE", "DIAMETER", "CUTTING_LENGTH"}},
+    {"SPINDLE", {"MAX_RPM", "ENCODER_COUNTS_PER_REV"}}, {"VIRTUAL_IO", {"CONFIG"}}
 };
 Entries read_ini(const std::string& filename) {
     std::ifstream file(filename);
@@ -249,6 +250,10 @@ SimulatorConfig load_simulator_config(int argc, const char* const* argv, bool re
     });
     apply("TOOL.DIAMETER", [&](const auto& v) { c.tool.diameter_mm = real_number(v); });
     apply("TOOL.CUTTING_LENGTH", [&](const auto& v) { c.tool.length_mm = real_number(v); });
+    apply("SPINDLE.MAX_RPM", [&](const auto& v) { c.spindle.max_rpm = real_number(v); });
+    apply("SPINDLE.ENCODER_COUNTS_PER_REV", [&](const auto& v) {
+        c.spindle.encoder_counts_per_revolution = number(v);
+    });
     apply("VIRTUAL_IO.CONFIG", [&](const auto& v) {
         if (v.empty()) throw std::invalid_argument("expected an I/O config filename");
         c.io.files.push_back((std::filesystem::absolute(filename).parent_path() / v).lexically_normal().string());
@@ -309,6 +314,11 @@ SimulatorConfig load_simulator_config(int argc, const char* const* argv, bool re
     });
     checked("MATERIAL.WORKERS MATERIAL.BATCH_MS MESH.WORKERS", [&] { c.workers = resolve_material_workers(c.workers); });
     checked("TOOL.DIAMETER TOOL.CUTTING_LENGTH", [&] { validate_tool(c.tool); });
+    checked("SPINDLE.MAX_RPM SPINDLE.ENCODER_COUNTS_PER_REV", [&] {
+        if (c.spindle.max_rpm <= 0.0) throw std::invalid_argument("MAX_RPM must be > 0");
+        if (c.spindle.encoder_counts_per_revolution == 0)
+            throw std::invalid_argument("ENCODER_COUNTS_PER_REV must be > 0");
+    });
     checked("WORKPIECE.SIZE WORKPIECE.POSITION WORKPIECE.ORIGIN WORKPIECE.VOXEL_SIZE WORKPIECE.ROTATION", [&] {
         SceneConfig scene;
         scene.stock_size_mm = c.workpiece.size_mm;
@@ -366,7 +376,8 @@ std::string describe_config(const SimulatorConfig& c) {
     vector("Machine max (before legacy rotation)", c.workpiece.machine_max());
     vector("Legacy rotation degrees", c.stock_rotation_degrees);
     out << "[TOOL]\nTYPE = flat-end\nDIAMETER = " << c.tool.diameter_mm << "\nCUTTING_LENGTH = " << c.tool.length_mm
-        << "\n[VIRTUAL_IO]\n";
+        << "\n[SPINDLE]\nMAX_RPM = " << c.spindle.max_rpm
+        << "\nENCODER_COUNTS_PER_REV = " << c.spindle.encoder_counts_per_revolution << "\n[VIRTUAL_IO]\n";
     if (c.io.files.empty()) out << "CONFIG = (none)\n";
     for (const auto& file : c.io.files) out << "CONFIG = " << file << '\n';
     return out.str();

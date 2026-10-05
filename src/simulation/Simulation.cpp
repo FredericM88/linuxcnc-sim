@@ -7,8 +7,9 @@ namespace cnc {
 Simulation::Simulation(const std::string& address, std::uint16_t port, Scales scales,
                        const std::vector<IOCommand>& initial_io, std::optional<SceneConfig> scene, MaterialWorkerConfig workers,
                        std::shared_ptr<const WorkpieceSnapshot> initial_workpiece,
-                       ToolDefinition initial_tool, bool material_enabled)
+                       ToolDefinition initial_tool, bool material_enabled, SpindleConfig spindle)
     : device_(scales), server_(address, port),
+      spindle_(spindle),
       scales_(scales) {
     validate_tool(initial_tool);
     if (initial_workpiece) workpiece_ = std::move(initial_workpiece);
@@ -107,6 +108,7 @@ void Simulation::run(std::stop_token token) {
         state.recorder_failed = recorder_.failed();
         state.samples = recorder_.count();
         state.io = sensors_.status();
+        state.spindle = spindle_.state();
         state.now_us = elapsed();
         std::lock_guard lock(mailbox_);
         published_ = state;
@@ -165,6 +167,7 @@ void Simulation::run(std::stop_token token) {
                 const auto previous = device_.machine().positions();
                 const auto accepted = device_.accept({datagram->bytes.data(), datagram->size}, now);
                 if (accepted) {
+                    spindle_.update(accepted->spindle_command, accepted->elapsed_us);
                     const auto current = device_.machine().positions();
                     if (previous[0] != current[0] || previous[1] != current[1] || previous[2] != current[2]) {
                         MaterialEvent event;
@@ -173,7 +176,9 @@ void Simulation::run(std::stop_token token) {
                         material_->enqueue(std::move(event));
                     }
                     sensors_.update(previous, device_.machine().positions());
-                    const auto response = StepperNinjaProtocol::make_response(*accepted, sensors_.inputs());
+                    const auto spindle_feedback = spindle_.feedback();
+                    const auto response = StepperNinjaProtocol::make_response(
+                        *accepted, sensors_.inputs(), &spindle_feedback);
                     if (server_.send(response, datagram->sender)) ++state.sent;
                     else ++state.send_errors;
                     recorder_.observe(device_.machine().positions(), now);

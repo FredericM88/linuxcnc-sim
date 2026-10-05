@@ -1,4 +1,4 @@
-# Simulator configuration (Phase 5.5)
+# Simulator configuration (Phase 6.1)
 
 `simulator.ini` describes the simulator's startup scene, axis scales, network and
 worker settings. It is independent of the LinuxCNC INI and the separate
@@ -18,9 +18,9 @@ existing configured network namespace for LinuxCNC, as in the
 ```
 
 The example explicitly selects rendering, 400 steps/unit, four mesh workers and
-the accepted 30×20×10-mm milling scene. Material remains **off** during homing;
-position the machine and use the existing `material on` command to start cutting.
-No new LinuxCNC acceptance run is claimed by this configuration-only change.
+the accepted 30×20×10-mm milling scene, plus a 24000-RPM/1024-count spindle.
+Material remains **off** during homing; position the machine and use the existing
+`material on` command to start cutting.
 
 ## Precedence and inspection
 
@@ -84,11 +84,13 @@ three comma-separated components; components may have surrounding whitespace.
 | `TOOL` | `TYPE` | `flat-end` | Only `flat-end` is implemented |
 | `TOOL` | `DIAMETER` | `6.0` | Finite mm in `(0,1e12]` |
 | `TOOL` | `CUTTING_LENGTH` | `20.0` | Finite mm in `(0,1e12]`, extending along machine +Z from the bottom-centre tip |
+| `SPINDLE` | `MAX_RPM` | `24000` | Positive finite physical speed at 100% PWM |
+| `SPINDLE` | `ENCODER_COUNTS_PER_REV` | `1024` | Positive integer accumulated counts per mechanical revolution |
 | `VIRTUAL_IO` | `CONFIG` | no file | Nonempty filename of an existing, readable sensor-command file |
 
 Physical volume/index limits and the existing 65536-chunk budget also apply.
-Defaults come from the existing `WorkpieceConfig`, `SceneConfig`, `ToolDefinition`
-and `MaterialWorkerConfig`, not from the example values.
+Defaults come from the existing `WorkpieceConfig`, `SceneConfig`, `ToolDefinition`,
+`SpindleConfig` and `MaterialWorkerConfig`, not from the example values.
 
 ## Units, axes and machine coordinates
 
@@ -111,6 +113,31 @@ LinuxCNC owns **G54/G55/etc., G92, G41/G42, G43/tool-length compensation, G-code
 interpretation and trajectory planning**. The simulator receives the resulting
 machine motion. `WORKPIECE.POSITION` is in machine space. There are no simulator
 G54/G55/G92/G43 keys, and offsets must not be applied a second time.
+
+## Virtual spindle hardware model
+
+The spindle responds only to the existing Stepper-Ninja hardware packet. Output
+ordinal 0 (`outputs[0]` bit 0) is enable. Output ordinal 1 (`outputs[0]` bit 1)
+is direction: clear is forward/positive and set is reverse/negative. These are
+wire ordinals; profile GPIO8 and GPIO12 are physical pin identities and are not
+wire bit numbers. PWM channel 0 uses the pinned Stepper-Ninja calculation:
+integer-divide `200000000 / frequency`, replace the result with 65535 below
+1908 Hz, then narrow it to 16 bits. Physical duty is `duty / wrap`, clamped to
+0–100%; zero frequency or a zero narrowed wrap safely means zero duty. The
+apparently unusual narrowed wraps from 1908 through 3051 Hz deliberately match
+the pinned driver and firmware. `MAX_RPM` is the physical speed at 100% duty.
+The simulator does not recover or interpret an S word.
+
+Encoder channel 0 reports accumulated signed counts and a wrapping microsecond
+timestamp. `enc_control` bit 0 is a level: while high, every zero-degree index
+crossing can reset the counter, including several crossings between packets,
+without an intervening low command. `interrupt_data` bit 0 only indicates that
+at least one crossing occurred since the previous response; multiple events
+coalesce, and the returned counter measures from the last reset. A newly received
+control level applies only after advancing the already elapsed interval. Encoder
+velocity remains zero because the Stepper-Ninja HAL driver derives velocity from
+count and timestamp deltas. LinuxCNC remains responsible for M3/M4/M5, S words,
+and all other G-code semantics. Material removal is not gated by spindle state.
 
 Workpiece placement reuses Phase 4A.1:
 
@@ -193,6 +220,7 @@ Initial tool/enable controls enter the existing ordered material event path befo
 UDP motion can be produced. Material algorithms, worker count, batching and wire
 protocol remain unchanged.
 
-`SPINDLE`, `TOOLSETTER` and `PROBE` are future Phase 6 concepts, not accepted sections.
-This phase adds no spindle/holder simulation, geometric probing, toolsetter,
-new cutters, collision detection, offset handling or rotary material transform.
+`TOOLSETTER` and `PROBE` remain future concepts and are not accepted sections.
+This phase adds no spindle acceleration, load, torque, holder geometry, geometric
+probing, toolsetter, new cutters, collision detection, offset handling or rotary
+material transform.

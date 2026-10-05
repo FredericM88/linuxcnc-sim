@@ -49,6 +49,11 @@ std::string statistics(const cnc::SimulationStatus& state, const cnc::SimulatorC
         out << labels[i] << "  " << state.positions[i] << " steps  "
             << std::fixed << std::setprecision(4) << static_cast<double>(state.positions[i]) / options.scales()[i]
             << ' ' << options.units[i] << '\n';
+    out << "Spindle: " << (state.spindle.enabled ? "enabled" : "disabled")
+        << ' ' << (state.spindle.forward ? "forward" : "reverse")
+        << "  PWM " << std::fixed << std::setprecision(1) << state.spindle.pwm_fraction * 100.0
+        << "%  commanded " << state.spindle.commanded_rpm << " RPM  actual "
+        << state.spindle.actual_rpm << " RPM  encoder " << state.spindle.encoder_counter << '\n';
     out << "Recorder: " << (state.recorder_failed ? "ERROR: allocation failed, incomplete" :
                                state.recording ? "RECORDING" : "STOPPED")
         << "\nSamples: " << state.samples << "  Changed samples: " << (state.samples ? state.samples - 1 : 0) << '\n';
@@ -66,7 +71,7 @@ void run_console(cnc::Simulation& simulation, const cnc::SimulatorConfig& option
     {
         cnc::TerminalUI terminal(options.interactive);
         if (!terminal.fixed()) {
-            std::cout << "Stepper-Ninja virtual device (Phase 5, 4 stepgens / 3 stationary encoders)\n"
+            std::cout << "Stepper-Ninja virtual device (Phase 6.1, 4 stepgens / virtual spindle encoder 0)\n"
                       << "Wire sizes: " << cnc::request_size << " RX / " << cnc::response_size << " TX\n"
                       << "Reference: zero steps on startup; scales are local configuration\n"
                       << "Listening: " << options.network.bind_address << ':' << simulation.port() << std::endl;
@@ -205,7 +210,7 @@ int main(int argc, char** argv) {
         sigaction(SIGPIPE, &ignore, nullptr);
         cnc::Simulation simulation(options.network.bind_address, options.network.port, options.scales(), options.io.commands,
                                    std::nullopt, options.workers, options.initial_workpiece,
-                                   options.tool, options.material_enabled);
+                                   options.tool, options.material_enabled, options.spindle);
 #ifdef CNC_SIM_RENDER
         if (options.render) {
             auto rendered = simulation.workpiece_snapshot();

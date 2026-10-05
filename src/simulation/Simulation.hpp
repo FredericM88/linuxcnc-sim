@@ -20,6 +20,7 @@ struct SimulationStatus {
     bool recording{}, recorder_failed{};
     std::string peer, fatal_error;
     IOStatus io;
+    SpindleState spindle;
 };
 struct CommandResult {
     std::string message;
@@ -33,7 +34,8 @@ public:
                const std::vector<IOCommand>& initial_io = {},
                std::optional<SceneConfig> scene = std::nullopt, MaterialWorkerConfig workers = {},
                std::shared_ptr<const WorkpieceSnapshot> initial_workpiece = {},
-               ToolDefinition initial_tool = {}, bool material_enabled = false);
+               ToolDefinition initial_tool = {}, bool material_enabled = false,
+               SpindleConfig spindle = {});
     ~Simulation();
     Simulation(const Simulation&) = delete;
     Simulation& operator=(const Simulation&) = delete;
@@ -60,6 +62,7 @@ private:
     UdpServer server_;
     MotionRecorder recorder_;
     VirtualSensors sensors_;
+    VirtualSpindle spindle_;
     mutable std::mutex workpiece_mutex_; // Never acquired by UDP.
     std::shared_ptr<const WorkpieceSnapshot> workpiece_;
     Scales scales_;

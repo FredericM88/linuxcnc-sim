@@ -15,9 +15,11 @@ TABLE = [int(x, 16) for x in re.findall(r"0x([0-9a-f]{2})", (
 assert len(TABLE) == 256
 
 
-def packet(identifier, delta=0, timing=235):
+def packet(identifier, delta=0, timing=235, outputs=0, pwm_duty=0,
+           pwm_frequency=0, enc_control=0):
     word = 0 if delta == 0 else ((int(delta > 0) << 31) | (19494 << 10) | (abs(delta) - 1))
-    body = struct.pack("<4I2IIIHBB", word, 0, 0, 0, 0, 0, 0, 0, timing, 0, identifier)
+    body = struct.pack("<4I2IIIHBB", word, 0, 0, 0, outputs, 0,
+                       pwm_duty, pwm_frequency, timing, enc_control, identifier)
     assert len(body) == 36
     return body + bytes([sum(TABLE[x] for x in body) & 255])
 
@@ -34,6 +36,18 @@ def exchange(sock, target, identifier, delta=0):
     assert reply[36:53] == bytes(17)  # Index flags and all inputs.
     assert reply[57:59] == bytes(2)  # No software ring.
     return time.monotonic() - start
+
+
+def spindle_exchange(sock, target, identifier, outputs, duty=20000, frequency=10000):
+    sock.sendto(packet(identifier, outputs=outputs, pwm_duty=duty,
+                       pwm_frequency=frequency), target)
+    reply, peer = sock.recvfrom(65535)
+    assert peer == target and len(reply) == 61
+    assert reply[-1] == (sum(TABLE[x] for x in reply[:-1]) & 255)
+    assert reply[59] == identifier
+    counter = struct.unpack_from("<i", reply)[0]
+    assert struct.unpack_from("<i", reply, 12)[0] == 0  # Firmware-compatible velocity field.
+    return counter
 
 
 def main():
@@ -88,6 +102,16 @@ def main():
             for i in range(1000):
                 worst = max(worst, exchange(sock, target, (4 + i) & 255, 4))
                 time.sleep(max(0, start + (i + 1) * 0.001 - time.monotonic()))
+            spindle_id = (4 + 1000) & 255
+            spindle_exchange(sock, target, spindle_id, outputs=0x1)  # Enable, forward, 100% PWM.
+            time.sleep(0.05)
+            forward_count = spindle_exchange(sock, target, (spindle_id + 1) & 255,
+                                              outputs=0x3)  # Reverse applies after response.
+            assert forward_count > 0, forward_count
+            time.sleep(0.02)
+            reverse_count = spindle_exchange(sock, target, (spindle_id + 2) & 255,
+                                              outputs=0)  # Disable applies after response.
+            assert reverse_count < forward_count, (forward_count, reverse_count)
             print(f"1000 packets at nominal 1 kHz, worst observed roundtrip {worst * 1000:.3f} ms")
         finally:
             process.terminate()
@@ -101,10 +125,12 @@ def main():
         assert process.returncode == 0, output
         assert "X  4035 steps  10.0875 mm" in output, output
         assert "Y  0 steps" in output and "Z  0 steps" in output and "A  0 steps" in output, output
-        assert "Packets RX: 1015  accepted: 1009  invalid: 6  TX: 1009  send errors: 0" in output, output
+        assert "Packets RX: 1018  accepted: 1012  invalid: 6  TX: 1012  send errors: 0" in output, output
         assert "Length errors: 4  checksum errors: 1  timing errors: 1" in output, output
         assert "Packet-ID gaps: 4" in output, output
-        print("PASS: replies, peer ports, invalid datagrams, ID wrap/gaps/duplicates, positions, CLI, shutdown")
+        assert "Spindle: disabled" in output, output
+        print("PASS: replies, spindle forward/reverse/disable feedback, peer ports, invalid datagrams, "
+              "ID wrap/gaps/duplicates, positions, CLI, shutdown")
 
 
 if __name__ == "__main__":

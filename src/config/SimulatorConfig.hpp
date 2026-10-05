@@ -5,6 +5,7 @@
 #include <vector>
 #include "material/MaterialWorker.hpp"
 #include "io/VirtualSensors.hpp"
+#include "spindle/VirtualSpindle.hpp"
 
 namespace cnc {
 enum class AxisType { Linear, Rotary };
@@ -32,6 +33,7 @@ struct SimulatorConfig {
     MaterialWorkerConfig workers;
     bool material_enabled{};
     ToolDefinition tool;
+    SpindleConfig spindle;
     WorkpieceConfig workpiece;
     glm::dvec3 stock_rotation_degrees{0};
     VirtualIOConfig io;

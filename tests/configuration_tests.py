@@ -59,7 +59,8 @@ with tempfile.TemporaryDirectory(prefix='cnc-config-') as temporary:
             ('MATERIAL', 'ENABLED', 'false'), ('RENDER', 'ENABLED', 'false'),
             ('WORKPIECE', 'SIZE', '50,50,10'), ('WORKPIECE', 'POSITION', '0,0,0'),
             ('WORKPIECE', 'ORIGIN', '0,0,10'), ('TOOL', 'DIAMETER', '6'),
-            ('TOOL', 'CUTTING_LENGTH', '20'), ('VIRTUAL_IO', 'CONFIG', '(none)')]:
+            ('TOOL', 'CUTTING_LENGTH', '20'), ('SPINDLE', 'MAX_RPM', '24000'),
+            ('SPINDLE', 'ENCODER_COUNTS_PER_REV', '1024'), ('VIRTUAL_IO', 'CONFIG', '(none)')]:
             assert field(out, section, key) == value, out
         assert float(field(out, 'WORKPIECE', 'VOXEL_SIZE')) == .1
         assert 1 <= int(field(out, 'MESH', 'WORKERS')) <= 4
@@ -133,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix='cnc-config-') as temporary:
                    ('--io-config', 'sensors.conf', '--io-config', 'more.conf'))
         assert 'CONFIG = sensors.conf\nCONFIG = more.conf' in out
     elif case == 'unknown-section':
-        for section in ('TYPO', 'SPINDLE', 'TOOLSETTER', 'PROBE'):
+        for section in ('TYPO', 'TOOLSETTER', 'PROBE'):
             bad(f'[{section}]\n', [':1', f'[{section}]', 'unknown section'])
     elif case == 'unknown-key':
         bad('[MATERIAL]\nBATC_MS = 20\n', [':2', '[MATERIAL]', 'BATC_MS', 'unknown key'])
@@ -188,6 +189,15 @@ with tempfile.TemporaryDirectory(prefix='cnc-config-') as temporary:
         for key in ('DIAMETER', 'CUTTING_LENGTH'):
             for value in ('0', '-1', '1e13'):
                 bad(f'[TOOL]\n{key} = {value}\n', [':2', '[TOOL]', key])
+    elif case == 'spindle':
+        out = good('[SPINDLE]\nMAX_RPM = 18000.5\nENCODER_COUNTS_PER_REV = 4096\n')
+        assert field(out, 'SPINDLE', 'MAX_RPM') == '18000.5'
+        assert field(out, 'SPINDLE', 'ENCODER_COUNTS_PER_REV') == '4096'
+        for value in ('0', '-1', 'nan', 'inf'):
+            bad(f'[SPINDLE]\nMAX_RPM = {value}\n', [':2', '[SPINDLE]', 'MAX_RPM'])
+        for value in ('0', '-1', '1.5', '4294967296'):
+            bad(f'[SPINDLE]\nENCODER_COUNTS_PER_REV = {value}\n',
+                [':2', '[SPINDLE]', 'ENCODER_COUNTS_PER_REV'])
     elif case == 'missing-io':
         bad('[VIRTUAL_IO]\nCONFIG = missing.conf\n', [':2', 'CONFIG', 'missing.conf'])
         bad('[VIRTUAL_IO]\nCONFIG = .\n', [':2', 'CONFIG', 'file'])

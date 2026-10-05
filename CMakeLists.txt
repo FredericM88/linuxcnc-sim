@@ -21,6 +21,7 @@ target_include_directories(stepper_ninja_original SYSTEM PUBLIC
 add_library(cnc_sim_core STATIC
     src/config/SimulatorConfig.cpp
     src/protocol/StepperNinjaProtocol.cpp
+    src/spindle/VirtualSpindle.cpp
     src/machine/MachineState.cpp
     src/network/UdpServer.cpp
     src/recorder/MotionRecorder.cpp
@@ -133,6 +134,10 @@ if(BUILD_TESTING)
     target_link_libraries(protocol-tests PRIVATE cnc_sim_core)
     target_compile_options(protocol-tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME protocol-unit COMMAND protocol-tests)
+    add_executable(spindle-tests tests/spindle_tests.cpp)
+    target_link_libraries(spindle-tests PRIVATE cnc_sim_core)
+    target_compile_options(spindle-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+    add_test(NAME spindle-unit COMMAND spindle-tests)
     add_executable(recorder-tests tests/recorder_tests.cpp)
     target_link_libraries(recorder-tests PRIVATE cnc_sim_core)
     target_compile_options(recorder-tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -150,7 +155,7 @@ if(BUILD_TESTING)
     foreach(test defaults full partial precedence legacy axes axis-units
             origin-symbolic origin-numeric origin-mixed relative-io unknown-section unknown-key
             duplicates numeric enums vectors port scales voxel size batch material-workers
-            mesh-workers tool missing-io diagnostics stats placement-overrides no-config-runtime startup-runtime)
+            mesh-workers tool spindle missing-io diagnostics stats placement-overrides no-config-runtime startup-runtime)
         add_test(NAME config-${test} COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/configuration_tests.py" "$<TARGET_FILE:cnc-sim>" ${test})
         set_tests_properties(config-${test} PROPERTIES TIMEOUT 60)
