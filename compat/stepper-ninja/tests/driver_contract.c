@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -14,10 +15,15 @@
 #include <sys/socket.h>
 #include "hal_compat.h"
 
+static unsigned char captured[256];
+static size_t captured_size;
 static ssize_t capture_send(int fd, const void *buffer, size_t size, int flags,
                             const void *address, socklen_t length)
 {
     (void)fd; (void)flags; (void)address; (void)length;
+    assert(size <= sizeof(captured));
+    memcpy(captured, buffer, size);
+    captured_size = size;
     printf("wire %zu ", size);
     for (size_t i = 0; i < size; ++i) printf("%02x", ((const unsigned char *)buffer)[i]);
     puts("");
@@ -38,6 +44,47 @@ static ssize_t supply_recv(int fd, void *buffer, size_t size, int flags,
 #include DRIVER_SOURCE
 #undef sendto
 #undef recvfrom
+
+#ifdef SIMULATOR_PROFILE
+#ifdef KBMATRIX
+#error "simulator profile must not reserve the keyboard-matrix GPIOs"
+#endif
+_Static_assert(breakout_board == 0, "simulator profile must use custom Board 0");
+_Static_assert(stepgens == 4, "simulator profile must expose four step generators");
+_Static_assert(encoders == 3, "simulator profile must expose three encoders");
+_Static_assert(use_pwm == 1 && pwm_count == 1, "simulator profile must expose one PWM");
+_Static_assert(ANALOG_CH == 0, "simulator profile must not expose analog channels");
+
+_Static_assert(sizeof(transmission_pc_pico_t) == 37, "command packet size changed");
+_Static_assert(_Alignof(transmission_pc_pico_t) == 1, "command packet lost packed layout");
+_Static_assert(offsetof(transmission_pc_pico_t, stepgen_command) == 0, "stepgen offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, outputs) == 16, "outputs offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, pwm_duty) == 24, "PWM duty offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, pwm_frequency) == 28, "PWM frequency offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, pio_timing) == 32, "PIO timing offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, enc_control) == 34, "encoder control offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, packet_id) == 35, "command packet ID offset changed");
+_Static_assert(offsetof(transmission_pc_pico_t, checksum) == 36, "command checksum offset changed");
+
+_Static_assert(sizeof(transmission_pico_pc_t) == 61, "response packet size changed");
+_Static_assert(_Alignof(transmission_pico_pc_t) == 1, "response packet lost packed layout");
+_Static_assert(offsetof(transmission_pico_pc_t, encoder_counter) == 0, "encoder counter offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, encoder_velocity) == 12, "encoder velocity offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, encoder_timestamp) == 24, "encoder timestamp offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, interrupt_data) == 36, "index event offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, inputs) == 37, "inputs offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, jitter) == 53, "jitter offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, step_ring_fill) == 57, "ring fill offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, step_ring_status) == 58, "ring status offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, packet_id) == 59, "response packet ID offset changed");
+_Static_assert(offsetof(transmission_pico_pc_t, checksum) == 60, "response checksum offset changed");
+
+static const uint8_t profile_step_pins[] = stepgen_steps;
+static const uint8_t profile_dir_pins[] = stepgen_dirs;
+static const uint8_t profile_encoder_bases[] = enc_pins;
+static const uint8_t profile_index_pins[] = enc_index_pins;
+static const uint8_t profile_pwm_pins[] = pwm_pin;
+#endif
 
 /* Storage is test-owned. Only HAL's real inline accessors interpret API-1 refs. */
 static struct {
@@ -114,6 +161,124 @@ static void snapshot(const char *label)
         puts("");
     }
 }
+
+#ifdef SIMULATOR_PROFILE
+static int require_pin(const char *name, int direction, char kind)
+{
+    for (int i = 0; i < pin_count; ++i) {
+        if (strcmp(pins[i].name, name) == 0) {
+            assert(pins[i].direction == direction && pins[i].kind == kind);
+            return i;
+        }
+    }
+    assert(!"required HAL pin was not exported");
+    return -1;
+}
+
+static void verify_profile_gpio_layout(void)
+{
+    const uint8_t expected_steps[] = {29, 2, 4, 6};
+    const uint8_t expected_dirs[] = {1, 3, 5, 7};
+    const uint8_t expected_encoders[] = {10, 14, 23};
+    const uint8_t expected_indexes[] = {9, GP_NULL, GP_NULL};
+    const uint8_t expected_inputs[] = {22, 26, 27, 28};
+    const uint8_t expected_outputs[] = {8, 12};
+    const uint8_t expected_pwm[] = {13};
+    assert(memcmp(profile_step_pins, expected_steps, sizeof(expected_steps)) == 0);
+    assert(memcmp(profile_dir_pins, expected_dirs, sizeof(expected_dirs)) == 0);
+    assert(memcmp(profile_encoder_bases, expected_encoders, sizeof(expected_encoders)) == 0);
+    assert(memcmp(profile_index_pins, expected_indexes, sizeof(expected_indexes)) == 0);
+    assert(memcmp(input_pins, expected_inputs, sizeof(expected_inputs)) == 0);
+    assert(memcmp(output_pins, expected_outputs, sizeof(expected_outputs)) == 0);
+    assert(memcmp(profile_pwm_pins, expected_pwm, sizeof(expected_pwm)) == 0);
+    assert(in_pins_no == 4 && out_pins_no == 2);
+
+    uint8_t used[32] = {0};
+#define CLAIM(gpio) do { assert((gpio) < 32 && !used[(gpio)]); used[(gpio)] = 1; } while (0)
+    for (size_t i = 0; i < sizeof(profile_step_pins); ++i) CLAIM(profile_step_pins[i]);
+    for (size_t i = 0; i < sizeof(profile_dir_pins); ++i) CLAIM(profile_dir_pins[i]);
+    for (size_t i = 0; i < sizeof(profile_encoder_bases); ++i) {
+        CLAIM(profile_encoder_bases[i]);
+        CLAIM(profile_encoder_bases[i] + 1);
+    }
+    for (size_t i = 0; i < sizeof(profile_index_pins); ++i)
+        if (profile_index_pins[i] != GP_NULL) CLAIM(profile_index_pins[i]);
+    for (size_t i = 0; i < sizeof(input_pins); ++i) CLAIM(input_pins[i]);
+    for (size_t i = 0; i < sizeof(output_pins); ++i) CLAIM(output_pins[i]);
+    for (size_t i = 0; i < sizeof(profile_pwm_pins); ++i) CLAIM(profile_pwm_pins[i]);
+    const uint8_t reserved[] = {GPIO_RESET, GPIO_MISO, GPIO_CS, GPIO_SCK,
+                                GPIO_MOSI, GPIO_INT, LED_GPIO};
+    for (size_t i = 0; i < sizeof(reserved); ++i) assert(!used[reserved[i]]);
+#undef CLAIM
+}
+
+static void verify_profile_hal_interface(void)
+{
+    for (int i = 0; i < 4; ++i) {
+        char name[128];
+        snprintf(name, sizeof(name), "stepgen-ninja.0.stepgen.%d.command", i);
+        require_pin(name, HAL_IN, 'f');
+    }
+    for (int i = 0; i < 3; ++i) {
+        char name[128];
+        snprintf(name, sizeof(name), "stepgen-ninja.0.encoder.%d.raw-count", i);
+        require_pin(name, HAL_OUT, 's');
+    }
+    require_pin("stepgen-ninja.0.output.gp8", HAL_IN, 'b');
+    require_pin("stepgen-ninja.0.output.gp12", HAL_IN, 'b');
+    require_pin("stepgen-ninja.0.pwm.0.enable", HAL_IN, 'b');
+    require_pin("stepgen-ninja.0.pwm.0.duty", HAL_IN, 'u');
+    require_pin("stepgen-ninja.0.pwm.0.frequency", HAL_IN, 'u');
+    require_pin("stepgen-ninja.0.pwm.0.min-limit", HAL_IN, 'u');
+    require_pin("stepgen-ninja.0.pwm.0.max-scale", HAL_IN, 'u');
+    require_pin("stepgen-ninja.0.encoder.0.raw-count", HAL_OUT, 's');
+    require_pin("stepgen-ninja.0.encoder.0.position", HAL_OUT, 'f');
+    require_pin("stepgen-ninja.0.encoder.0.scale", HAL_IN, 'f');
+    require_pin("stepgen-ninja.0.encoder.0.velocity-rps", HAL_OUT, 'f');
+    require_pin("stepgen-ninja.0.encoder.0.index-enable", HAL_IN, 'b');
+    require_pin("stepgen-ninja.0.encoder.0.velocity-rpm", HAL_OUT, 'f');
+    require_pin("stepgen-ninja.0.encoder.0.debug-reset", HAL_IN, 'b');
+    for (int i = 0; i < pin_count; ++i) assert(strstr(pins[i].name, ".analog.") == NULL);
+}
+
+static transmission_pc_pico_t captured_command(void)
+{
+    transmission_pc_pico_t packet;
+    assert(captured_size == sizeof(packet));
+    memcpy(&packet, captured, sizeof(packet));
+    assert(packet.checksum == calculate_checksum(&packet, sizeof(packet) - 1));
+    return packet;
+}
+
+static void verify_profile_command_generation(module_data_t *d)
+{
+    sn_set_bit(d->output[0], 1);
+    sn_set_bit(d->output[1], 1);
+    sn_set_bit(d->pwm_enable[0], 1);
+    sn_set_u32(d->pwm_output[0], 2048);
+    sn_set_u32(d->pwm_frequency[0], 10000);
+    sn_set_u32(d->pwm_min_limit[0], 0);
+    sn_set_u32(d->pwm_maxscale[0], 4096);
+    sn_set_bit(d->enc_index[0], 1);
+    udp_io_process_send(d, 1000000);
+    transmission_pc_pico_t packet = captured_command();
+    assert(packet.outputs[0] == 3 && packet.outputs[1] == 0);
+    assert(packet.pwm_duty[0] == 10000 && packet.pwm_frequency[0] == 10000);
+    assert(packet.enc_control == 1);
+
+    /* Output GPIO12 is ordinal 1: it must set packet bit 1, not GPIO bit 12. */
+    sn_set_bit(d->output[0], 0);
+    udp_io_process_send(d, 1000000);
+    packet = captured_command();
+    assert(packet.outputs[0] == 2 && packet.outputs[1] == 0);
+    assert((packet.outputs[0] & (1u << 12)) == 0);
+
+    sn_set_bit(d->output[0], 1);
+    sn_set_bit(d->output[1], 0);
+    sn_set_bit(d->enc_index[0], 0);
+}
+#endif
+
 static void receive_packet(transmission_pico_pc_t *packet)
 {
     packet->checksum = calculate_checksum(packet, sizeof(*packet) - 1);
@@ -132,7 +297,14 @@ int main(int argc, char **argv)
         free(tx_buffer); free(rx_buffer); free(component_storage);
         return 0;
     }
-    assert(result == 0 && pin_count == 66);
+    assert(result == 0);
+#ifdef SIMULATOR_PROFILE
+    assert(pin_count == 72);
+    verify_profile_gpio_layout();
+    verify_profile_hal_interface();
+#else
+    assert(pin_count == 66);
+#endif
     snapshot("defaults");
     module_data_t *d = hal_data;
     sn_set_u32(d->period, 1000000);
@@ -143,6 +315,9 @@ int main(int argc, char **argv)
         sn_set_float(d->scale[i], 400);
     }
     watchdog_process(d, 1000000);
+#ifdef SIMULATOR_PROFILE
+    verify_profile_command_generation(d);
+#endif
     udp_io_process_send(d, 1000000);
     for (int cycle = 1; cycle <= 4; ++cycle) {
         for (int i = 0; i < stepgens; ++i) sn_set_float(d->command[i], cycle * (i % 2 ? -0.025 : 0.025));

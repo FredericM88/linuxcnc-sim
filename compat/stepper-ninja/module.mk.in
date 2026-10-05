@@ -1,8 +1,8 @@
 obj-m += stepgen-ninja.o
 include @module_modinc_make@
-EXTRA_CFLAGS += -I"./prepared" @module_extra_includes@
+EXTRA_CFLAGS += -I"./configured" @module_extra_includes@
 EXTRA_CFLAGS += -Werror=implicit-function-declaration -Werror=incompatible-pointer-types
 
-stepgen-ninja.o: prepared/stepgen-ninja.c Makefile.hal @module_modinc_make@
+stepgen-ninja.o: configured/stepgen-ninja.c Makefile.hal @module_modinc_make@
 	$(ECHO) Compiling realtime $<
 	$(Q)$(CC) -o $@ $(EXTRA_CFLAGS) -c "$<"

@@ -10,8 +10,11 @@ endif()
 find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 find_program(PATCH_PROGRAM patch REQUIRED)
 set(prepared "${CMAKE_CURRENT_BINARY_DIR}/prepared")
+set(configured "${CMAKE_CURRENT_BINARY_DIR}/configured")
+set(profile_config
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../profiles/stepper-ninja/linuxcnc-sim/config.h")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    prepare.py hal-api.patch hal_compat.h
+    prepare.py hal-api.patch hal_compat.h "${profile_config}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/stepper-ninja/SHA256SUMS")
 set(upstream_inputs "${STEPPER_NINJA_SOURCE}/hal-driver/stepgen-ninja.c"
     "${STEPPER_NINJA_SOURCE}/hal-driver/hal_pin_macros.h")
@@ -24,6 +27,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${upstream_inputs
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/prepare.py"
     --source "${STEPPER_NINJA_SOURCE}" --output "${prepared}"
     COMMAND_ERROR_IS_FATAL ANY)
+# Hardware selection is a separate, normal Stepper-Ninja config.h operation.
+# Keep the hash-verified/API-adapted tree intact for compatibility parity tests.
+file(COPY "${prepared}/" DESTINATION "${configured}")
+configure_file("${profile_config}" "${configured}/config.h" COPYONLY)
 
 set(module_modinc "")
 set(module_extra_includes "")
@@ -97,8 +104,8 @@ endif()
 
 if(NOT module_modinc)
     # Unconfigured source-tree fallback only; these defines do not build a module.
-    add_library(stepgen-ninja OBJECT "${prepared}/stepgen-ninja.c")
-    target_include_directories(stepgen-ninja PRIVATE "${prepared}" ${hal_includes})
+    add_library(stepgen-ninja OBJECT "${configured}/stepgen-ninja.c")
+    target_include_directories(stepgen-ninja PRIVATE "${configured}" ${hal_includes})
     target_compile_definitions(stepgen-ninja PRIVATE USPACE RTAPI _GNU_SOURCE realtime __MODULE__ SIM)
     target_compile_options(stepgen-ninja PRIVATE -fno-fast-math -Werror=implicit-function-declaration
         -Werror=incompatible-pointer-types)
@@ -108,11 +115,11 @@ else()
     find_program(MAKE_PROGRAM NAMES gmake make REQUIRED)
     string(REPLACE " " "\\ " module_modinc_make "${module_modinc}")
     configure_file(module.mk.in "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal" @ONLY)
-    file(GLOB_RECURSE prepared_inputs "${prepared}/*")
+    file(GLOB_RECURSE configured_inputs "${configured}/*")
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/stepgen-ninja.so"
         COMMAND "${MAKE_PROGRAM}" -f Makefile.hal "CC=${CMAKE_C_COMPILER}" modules
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        DEPENDS ${prepared_inputs} "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal" "${module_modinc}"
+        DEPENDS ${configured_inputs} "${CMAKE_CURRENT_BINARY_DIR}/Makefile.hal" "${module_modinc}"
         BYPRODUCTS stepgen-ninja.o stepgen-ninja.tmp stepgen-ninja.ver
         VERBATIM)
     add_custom_target(stepgen-ninja ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/stepgen-ninja.so")

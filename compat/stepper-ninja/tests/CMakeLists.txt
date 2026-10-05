@@ -7,6 +7,9 @@ function(driver_contract name source)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 driver_contract(hal-driver-contract "${prepared}/stepgen-ninja.c")
+driver_contract(simulator-profile-contract "${configured}/stepgen-ninja.c")
+target_compile_definitions(simulator-profile-contract PRIVATE SIMULATOR_PROFILE=1)
+target_include_directories(simulator-profile-contract BEFORE PRIVATE "${configured}")
 add_test(NAME hal-source-preparation COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/preparation.py" "${STEPPER_NINJA_SOURCE}")
 add_test(NAME hal-api-symbol-detection COMMAND "${Python3_EXECUTABLE}"
