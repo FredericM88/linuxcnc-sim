@@ -205,6 +205,10 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/spindle_live_smoke.sh" "$<TARGET_FILE:cnc-sim>")
     set_tests_properties(spindle-live-linuxcnc-2.10 PROPERTIES
         LABELS "live;linuxcnc" TIMEOUT 55 SKIP_RETURN_CODE 77)
+    add_test(NAME spindle-linuxcnc-acceptance-2.10 COMMAND bash
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/spindle_linuxcnc_acceptance.sh" "$<TARGET_FILE:cnc-sim>")
+    set_tests_properties(spindle-linuxcnc-acceptance-2.10 PROPERTIES
+        LABELS "live;linuxcnc" TIMEOUT 90 SKIP_RETURN_CODE 77)
     add_test(NAME vendor-integrity COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/vendor_integrity.py")
     add_test(NAME shell-syntax COMMAND bash -n

@@ -1,0 +1,3 @@
+# LinuxCNC 2.10 loader: HAL API 1 calls these types real and uint.
+loadrt conv_real_uint names=spindle-speed-converter
+source phase3-common.hal

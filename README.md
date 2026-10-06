@@ -197,8 +197,12 @@ watchdog does not recover merely because the simulator appears later.
 In another terminal, from the checkout root, as your normal user:
 
 ```bash
-linuxcnc examples/phase3/phase3.ini
+linuxcnc examples/phase3/phase3-2.10.ini
 ```
+
+Use `phase3.ini` with LinuxCNC 2.9. The machine settings and HAL wiring are
+shared; the two wrappers select the standard conversion component name used by
+that LinuxCNC HAL API (`conv_real_uint` on 2.10, `conv_float_u32` on 2.9).
 
 In LinuxCNC AXIS, release E-stop (F1), enable the machine (F2), and choose
 **Home All**. Keep material removal off and the probe plane disabled during
@@ -213,6 +217,22 @@ G21 G90 G40 G49 G80
 G53 G1 Z-5 F300
 G53 G1 X15 Y4 F300
 ```
+
+Normal LinuxCNC spindle MDI commands use the same hardware transport:
+
+```gcode
+S6000 M3
+S12000
+S6000 M4
+M5
+```
+
+LinuxCNC 2.10-pre2 has a controller-side limitation for `S0` after a previous
+nonzero S word: its canonical spindle state retains the earlier speed, so
+`S0 M3` continues to expose that speed on the normal spindle HAL pins. `S0 M3`
+does produce enabled/zero-PWM when the controller's canonical speed is already
+zero. After a spindle has run, use `M5` for a deterministic stop; fixing the
+retained-S behavior belongs in LinuxCNC, not in cnc-sim or its wire protocol.
 
 Wait for each move to finish. In the simulator console enter `material on`, then
 in LinuxCNC MDI enter `G53 G1 Z-12 F120`. The tool should plunge into the stock
